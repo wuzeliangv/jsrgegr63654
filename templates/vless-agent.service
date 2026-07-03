@@ -1,0 +1,22 @@
+[Unit]
+Description=VLESS Panel Node Agent
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+ExecStart={{NODE_BIN}} /opt/vless-agent/agent.js
+Restart=always
+RestartSec=5
+Environment=NODE_ENV=production
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=vless-agent
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/opt/vless-agent /etc/vless-agent -/usr/local/etc/xray
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target

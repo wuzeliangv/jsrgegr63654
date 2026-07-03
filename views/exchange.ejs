@@ -1,0 +1,169 @@
+<%- include('partials/head', { title }) %>
+
+<nav class="glass-solid sticky top-0 z-40 px-6 py-3">
+  <div class="flex items-center justify-between" style="max-width:720px;margin-left:auto;margin-right:auto">
+    <div class="flex items-center gap-3">
+      <div class="w-8 h-8 rounded-lg bg-gradient-to-br from-rose-500 to-orange-500 flex items-center justify-center text-sm">🍑</div>
+      <span class="text-white font-semibold">能量兑换流量</span>
+    </div>
+    <a href="/" class="text-xs px-3 py-1.5 rounded-full glass text-gray-300 hover:text-white transition">← 返回面板</a>
+  </div>
+</nav>
+
+<div class="px-4 sm:px-6 py-8" style="max-width:480px;margin-left:auto;margin-right:auto">
+  <% if (paused) { %>
+  <div class="glass glow rounded-2xl p-8 text-center">
+    <div class="text-5xl mb-4">🛠️</div>
+    <h1 class="text-white text-lg font-semibold mb-2">兑换暂停中</h1>
+    <p class="text-gray-300 text-sm leading-relaxed">能量兑换功能正在临时调整维护，暂时无法使用。<br>给你带来不便，敬请谅解 🙏</p>
+    <p class="text-gray-500 text-xs mt-4">维护期间已发起的订单不受影响，恢复后即可正常兑换。</p>
+    <a href="/" class="inline-block mt-6 px-5 py-2.5 rounded-xl text-sm text-white" style="background:linear-gradient(135deg,#f43f5e,#f97316)">返回面板</a>
+  </div>
+  <% } else if (!enabled) { %>
+  <div class="glass rounded-2xl p-8 text-center">
+    <div class="text-4xl mb-3">🚧</div>
+    <p class="text-gray-300 text-sm">能量兑换功能暂未开放，请稍后再来～</p>
+  </div>
+  <% } else if (!tgBound) { %>
+  <div class="glass glow rounded-2xl p-8 text-center">
+    <div class="text-5xl mb-4">🔗</div>
+    <h1 class="text-white text-lg font-semibold mb-2">请先绑定 Telegram</h1>
+    <p class="text-gray-300 text-sm leading-relaxed">能量兑换流量需先绑定 Telegram 账号后才能使用。<br>绑定后即可兑换，同时解锁每日签到领种子、农场种菜收流量等功能 🌾</p>
+    <a href="/" class="inline-block mt-6 px-5 py-2.5 rounded-xl text-sm text-white" style="background:linear-gradient(135deg,#f43f5e,#f97316)">返回面板绑定 Telegram</a>
+  </div>
+  <% } else { %>
+  <div class="glass glow rounded-2xl p-6 sm:p-8">
+    <div class="text-center mb-6">
+      <div class="text-3xl mb-2">⚡️</div>
+      <h1 class="text-white text-lg font-semibold">能量兑换流量</h1>
+      <p class="text-gray-500 text-xs mt-1">1 能量 = 1 GB 流量 · 每日限兑换 1 次</p>
+    </div>
+
+    <!-- 数值展示 -->
+    <div class="text-center mb-6">
+      <div class="flex items-center justify-center gap-2">
+        <span id="energy-val" class="text-rose-400 text-4xl font-bold">50</span>
+        <span class="text-gray-400 text-sm">能量</span>
+      </div>
+      <div class="text-emerald-400 text-sm mt-1">可兑换 <span id="gb-val" class="font-semibold">50</span> GB 流量</div>
+    </div>
+
+    <!-- 滑块 -->
+    <div class="mb-5">
+      <input id="energy-range" type="range" min="<%= min %>" max="<%= max %>" step="1" value="50"
+        class="w-full accent-rose-500 cursor-pointer">
+      <div class="flex justify-between text-[11px] text-gray-600 mt-1">
+        <span><%= min %> GB</span>
+        <span><%= max %> GB</span>
+      </div>
+    </div>
+
+    <!-- 精确输入 -->
+    <div class="mb-5">
+      <label class="text-gray-400 text-xs">自定义能量数量（<%= min %>–<%= max %>）</label>
+      <input id="energy-input" type="number" min="<%= min %>" max="<%= max %>" step="1" value="50"
+        class="mt-1.5 w-full bg-black/30 text-white px-4 py-2.5 rounded-xl border border-white/10 text-sm text-center [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none">
+    </div>
+
+    <!-- 快捷档位 -->
+    <div class="mb-6" style="display:grid;grid-template-columns:repeat(4,1fr);gap:0.5rem">
+      <% [10, 30, 50, 100].forEach(function(v) { %>
+      <button class="quick-pick py-2 rounded-xl text-sm text-gray-300 border border-white/10 hover:bg-white/5 transition" data-v="<%= v %>"><%= v %></button>
+      <% }) %>
+    </div>
+
+    <button id="btn-do-exchange" class="w-full py-3 rounded-xl text-white font-medium transition" style="background:linear-gradient(135deg,#f43f5e,#f97316)">立即兑换</button>
+
+    <div class="mt-5 text-gray-500 text-[11px] leading-relaxed">
+      <p>· 兑换范围：<%= min %>–<%= max %> 能量（含两端），每 1 能量到账 1 GB 流量。</p>
+      <p>· 每个账号每日仅可成功兑换 1 次，请按需选择数量。</p>
+      <p>· 点击「立即兑换」后将跳转至 NodeLoc 完成能量支付，支付成功后流量自动到账。</p>
+    </div>
+  </div>
+
+  <!-- 我的兑换记录 -->
+  <div class="glass rounded-2xl p-5 mt-5">
+    <h2 class="text-white text-sm font-semibold mb-3">我的兑换记录</h2>
+    <div id="my-orders" class="space-y-2">
+      <p class="text-gray-500 text-xs text-center py-4">加载中...</p>
+    </div>
+  </div>
+  <% } %>
+</div>
+
+<% if (enabled && !paused && tgBound) { %>
+<script nonce="<%= nonce %>">
+(function () {
+  const MIN = <%= min %>, MAX = <%= max %>;
+  const range = document.getElementById('energy-range');
+  const input = document.getElementById('energy-input');
+  const energyVal = document.getElementById('energy-val');
+  const gbVal = document.getElementById('gb-val');
+  const btn = document.getElementById('btn-do-exchange');
+  const csrf = '<%= typeof csrfToken !== "undefined" ? csrfToken : "" %>';
+
+  function clamp(n) {
+    n = parseInt(n, 10);
+    if (!Number.isInteger(n)) n = MIN;
+    return Math.min(MAX, Math.max(MIN, n));
+  }
+  function setVal(n, fromInput) {
+    n = clamp(n);
+    range.value = n;
+    if (!fromInput) input.value = n;
+    energyVal.textContent = n;
+    gbVal.textContent = n;
+  }
+  range.addEventListener('input', () => setVal(range.value));
+  input.addEventListener('input', () => { energyVal.textContent = input.value; gbVal.textContent = input.value; range.value = clamp(input.value); });
+  input.addEventListener('blur', () => setVal(input.value));
+  document.querySelectorAll('.quick-pick').forEach(b => b.addEventListener('click', () => setVal(b.dataset.v)));
+
+  btn.addEventListener('click', async () => {
+    const amount = clamp(input.value);
+    setVal(amount);
+    const done = btnLoading(btn, '发起中...');
+    try {
+      const res = await fetch('/payment/nodeloc/create', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': csrf },
+        body: JSON.stringify({ amount })
+      });
+      const j = await res.json();
+      if (j.ok && j.paymentUrl) { window.location.href = j.paymentUrl; return; }
+      toast(j.error || '发起兑换失败', 3000, 'error');
+      done();
+    } catch (e) { toast('网络错误，请重试', 3000, 'error'); done(); }
+  });
+
+  setVal(50);
+
+  // 我的兑换记录
+  (function loadMyOrders() {
+    const box = document.getElementById('my-orders');
+    if (!box) return;
+    const esc = s => String(s == null ? '' : s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+    const badge = st => {
+      const m = { completed:['已完成','#34d399'], pending:['待支付','#fbbf24'], failed:['失败','#f87171'], closed:['已关闭','#9ca3af'] };
+      const [t,c] = m[st] || [st||'-','#9ca3af'];
+      return '<span style="color:'+c+';font-size:11px">'+t+'</span>';
+    };
+    const fmt = s => s ? esc(String(s).replace('T',' ').slice(0,16)) : '-';
+    fetch('/payment/my-orders', { cache:'no-store', headers:{ Accept:'application/json' } })
+      .then(r => r.json()).then(d => {
+        if (!d.ok) { box.innerHTML = '<p class="text-gray-500 text-xs text-center py-4">加载失败</p>'; return; }
+        if (!d.orders.length) { box.innerHTML = '<p class="text-gray-500 text-xs text-center py-4">还没有兑换记录</p>'; return; }
+        box.innerHTML = d.orders.map(o =>
+          '<div class="flex items-center justify-between py-2 border-b border-white/5 text-sm">' +
+            '<div><span class="text-gray-300">'+o.amount+' 能量 → </span><span class="text-emerald-400">'+o.traffic_gb+' GB</span>' +
+            '<div class="text-[11px] text-gray-600">'+fmt(o.created_at)+'</div></div>' +
+            badge(o.status) +
+          '</div>'
+        ).join('');
+      }).catch(() => { box.innerHTML = '<p class="text-gray-500 text-xs text-center py-4">加载失败</p>'; });
+  })();
+})();
+</script>
+<% } %>
+
+<%- include('partials/foot') %>

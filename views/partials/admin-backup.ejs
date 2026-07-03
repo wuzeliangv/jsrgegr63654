@@ -1,0 +1,96 @@
+<!-- 备份管理 Tab -->
+<div class="tab-panel space-y-4" data-tab="backup">
+  <div class="flex flex-wrap gap-2 mb-2">
+    <button id="create-backup-btn" class="glass text-white px-4 py-2 rounded-xl text-sm hover:bg-white/10 transition">💾 手动备份</button>
+    <button id="reload-backup-btn" class="glass text-white px-4 py-2 rounded-xl text-sm hover:bg-white/10 transition">🔄 刷新</button>
+  </div>
+
+  <div class="glass rounded-2xl overflow-hidden">
+    <div class="overflow-x-auto">
+      <table class="w-full text-sm text-left">
+        <thead class="text-gray-500 border-b border-white/5 text-xs">
+          <tr>
+            <th class="py-3 px-4">文件名</th>
+            <th class="py-3 px-4">大小</th>
+            <th class="py-3 px-4">时间</th>
+            <th class="py-3 px-4">操作</th>
+          </tr>
+        </thead>
+        <tbody class="text-gray-300" id="backup-list"></tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<script nonce="<%= nonce %>">
+function fmtSize(b) {
+  if (b < 1024) return b + ' B';
+  if (b < 1048576) return (b/1024).toFixed(1) + ' KB';
+  return (b/1048576).toFixed(2) + ' MB';
+}
+
+async function loadBackups() {
+  try {
+    const r = await fetch('/admin/api/backups', { headers: { 'X-CSRF-Token': _csrf } });
+    const d = await r.json();
+    const tbody = document.getElementById('backup-list');
+    if (!d.ok || !d.backups.length) {
+      tbody.innerHTML = '<tr><td colspan="4" class="py-6 text-center text-gray-500">暂无备份文件</td></tr>';
+      return;
+    }
+    tbody.innerHTML = d.backups.map(b => `
+      <tr class="border-b border-white/5 hover:bg-white/[0.02]">
+        <td class="py-3 px-4 text-xs font-mono">${escapeHtml(b.name)}</td>
+        <td class="py-3 px-4 text-xs">${fmtSize(b.size)}</td>
+        <td class="py-3 px-4 text-xs">${escapeHtml(b.mtime_display || '-')}</td>
+        <td class="py-3 px-4 space-x-2">
+          <a href="/admin/api/backups/download/${encodeURIComponent(b.name)}" class="text-cyan-400 hover:text-cyan-300 text-xs">下载</a>
+          <button type="button" data-backup-name="${encodeURIComponent(b.name)}" class="js-restore-backup text-amber-400 hover:text-amber-300 text-xs">恢复</button>
+        </td>
+      </tr>
+    `).join('');
+  } catch(e) { toast('加载备份列表失败', 2500, 'error'); }
+}
+
+async function createBackup(btn) {
+  const orig = btn.textContent;
+  btn.textContent = '⏳ 备份中...'; btn.disabled = true;
+  try {
+    const r = await fetch('/admin/api/backups/create', {
+      method: 'POST', headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': _csrf }
+    });
+    const d = await r.json();
+    if (d.ok) { toast('✅ 备份成功'); loadBackups(); }
+    else toast('❌ ' + (d.error || '备份失败'), 2500, 'error');
+  } catch(e) { toast('❌ 网络错误', 2500, 'error'); }
+  btn.textContent = orig; btn.disabled = false;
+}
+
+async function restoreBackup(name) {
+  const ok = await _confirm('⚠️ 确定从备份恢复？当前数据库将被覆盖（会先自动备份）');
+  if (!ok) return;
+  try {
+    const r = await fetch('/admin/api/backups/restore', {
+      method: 'POST', headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': _csrf },
+      body: JSON.stringify({ name })
+    });
+    const d = await r.json();
+    if (d.ok) toast('✅ 恢复成功，建议重启面板');
+    else toast('❌ ' + (d.error || '恢复失败'), 2500, 'error');
+  } catch(e) { toast('❌ 网络错误', 2500, 'error'); }
+}
+
+document.getElementById('create-backup-btn')?.addEventListener('click', function onCreateBackupClick() {
+  createBackup(this);
+});
+
+document.getElementById('reload-backup-btn')?.addEventListener('click', loadBackups);
+
+document.getElementById('backup-list')?.addEventListener('click', function onBackupListClick(e) {
+  const btn = e.target.closest('.js-restore-backup');
+  if (!btn) return;
+  const encodedName = btn.dataset.backupName;
+  if (!encodedName) return;
+  restoreBackup(decodeURIComponent(encodedName));
+});
+</script>

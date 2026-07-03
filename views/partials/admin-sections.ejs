@@ -1,0 +1,1543 @@
+<!-- 用户管理 Tab -->
+<script nonce="<%= nonce %>">
+  // 用 \u003c 转义所有 < 字符，防止 USER_GROUPS 内容意外引入脚本结束符
+  const _UG = <%- JSON.stringify(USER_GROUPS).replace(/</g, '\\u003c') %>;
+  function _groupHtml(lv) {
+    const g = _UG[Math.min(Math.max(lv||0,0), _UG.length-1)];
+    return `<span style="background:#b8860b;color:#fff;padding:1px 7px;border-radius:6px;font-size:11px">${g.badge ? g.badge+' ' : ''}${g.name}</span>`;
+  }
+</script>
+<div class="tab-panel" data-tab="users">
+  <!-- 用户总数 + 搜索 -->
+  <div class="flex items-center justify-between mb-3">
+    <span class="text-gray-500 text-xs">共 <span class="text-white font-medium" id="users-total-count">-</span> 个用户</span>
+    <input type="text" id="user-search" placeholder="搜索用户名..." class="bg-black/30 text-white px-3 py-1.5 rounded-xl border border-white/10 text-xs w-40">
+  </div>
+
+  <!-- 移动端卡片容器 -->
+  <div class="sm:hidden space-y-3" id="users-cards">
+    <div class="text-center text-gray-500 text-sm py-8">加载中...</div>
+  </div>
+  <!-- 桌面端表格 -->
+  <div class="hidden sm:block glass rounded-2xl overflow-hidden">
+    <div class="overflow-x-auto">
+      <table class="w-full text-sm text-left">
+        <thead class="text-gray-500 border-b border-white/5 text-xs">
+          <tr>
+            <th class="py-3 px-4">用户</th>
+            <th class="py-3 px-4 cursor-pointer hover:text-rose-400 transition select-none js-user-sort" data-sort-col="id">ID <span id="sort-icon-id" class="text-xs"></span></th>
+            <th class="py-3 px-4 cursor-pointer hover:text-rose-400 transition select-none js-user-sort" data-sort-col="trust_level">用户组 <span id="sort-icon-trust_level" class="text-xs"></span></th>
+            <th class="py-3 px-4 cursor-pointer hover:text-rose-400 transition select-none js-user-sort" data-sort-col="total_traffic">已用/限额 <span id="sort-icon-total_traffic" class="text-xs">▼</span></th>
+            <th class="py-3 px-4 cursor-pointer hover:text-rose-400 transition select-none js-user-sort" data-sort-col="expires_at">到期 <span id="sort-icon-expires_at" class="text-xs"></span></th>
+            <th class="py-3 px-4 cursor-pointer hover:text-rose-400 transition select-none js-user-sort" data-sort-col="last_login">最后活跃 <span id="sort-icon-last_login" class="text-xs"></span></th>
+            <th class="py-3 px-4">状态</th>
+            <th class="py-3 px-4">操作</th>
+          </tr>
+        </thead>
+        <tbody class="text-gray-300" id="users-tbody">
+          <tr><td colspan="8" class="py-8 text-center text-gray-500">加载中...</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <!-- 分页 -->
+    <div class="flex items-center justify-between px-4 py-3 border-t border-white/5">
+      <span class="text-gray-500 text-xs" id="users-page-info"></span>
+      <div class="flex gap-1" id="users-pagination"></div>
+    </div>
+  </div>
+  <!-- 移动端分页 -->
+  <div class="sm:hidden flex items-center justify-between mt-3">
+    <span class="text-gray-500 text-xs" id="users-page-info-m"></span>
+    <div class="flex gap-1" id="users-pagination-m"></div>
+  </div>
+
+  <script nonce="<%= nonce %>">
+  (function(){
+    const csrfToken = '<%= csrfToken %>';
+    window._csrf = csrfToken;
+    let _searchTimer = null;
+    let _userSortBy = 'total_traffic';
+    let _userSortDir = 'DESC';
+    let _currentPage = 1;
+    const _userNameById = new Map();
+    const _userExpiryById = new Map();
+
+    function _escHtml(v) {
+      if (v == null) return '';
+      return String(v)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
+    }
+
+    function _safeAvatarUrl(url) {
+      if (!url) return '';
+      const raw = String(url).trim();
+      if (!raw) return '';
+      if (/^https?:\/\//i.test(raw) || raw.startsWith('/')) return _escHtml(raw);
+      return '';
+    }
+
+    window.setTrafficLimitById = function(userId, currentLimit) {
+      const username = _userNameById.get(userId) || String(userId);
+      setTrafficLimit(userId, username, currentLimit);
+    };
+    window.setExpiryById = function(userId) {
+      const username = _userNameById.get(userId) || String(userId);
+      const currentExpiry = _userExpiryById.get(userId) || '';
+      setExpiry(userId, username, currentExpiry);
+    };
+
+    window.sortUsers = function(col) {
+      if (_userSortBy === col) {
+        _userSortDir = _userSortDir === 'DESC' ? 'ASC' : 'DESC';
+      } else {
+        _userSortBy = col;
+        _userSortDir = 'DESC';
+      }
+      // 更新图标
+      document.querySelectorAll('[id^="sort-icon-"]').forEach(el => el.textContent = '');
+      const icon = document.getElementById('sort-icon-' + col);
+      if (icon) icon.textContent = _userSortDir === 'DESC' ? '▼' : '▲';
+      loadUsers(1);
+    }
+
+    function _fmtBytes(b) {
+      if (!b || b === 0) return '0 B';
+      const u = ['B','KB','MB','GB','TB'];
+      const i = Math.min(Math.floor(Math.log(b) / Math.log(1024)), u.length - 1);
+      return (b / Math.pow(1024, i)).toFixed(i > 0 ? 2 : 0) + ' ' + u[i];
+    }
+
+    window.loadUsers = async function(page = 1) {
+      _currentPage = page;
+      const search = (document.getElementById('user-search').value || '').trim();
+      const params = new URLSearchParams({ page, search, sortBy: _userSortBy, sortDir: _userSortDir });
+      const resp = await fetch('/admin/api/users?' + params);
+      const data = await resp.json();
+      const tbody = document.getElementById('users-tbody');
+      const cards = document.getElementById('users-cards');
+      const total = data.total;
+      document.getElementById('users-total-count').textContent = total;
+
+      if (!data.rows || data.rows.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="8" class="py-8 text-center text-gray-500">无匹配用户</td></tr>';
+        cards.innerHTML = '<div class="text-center text-gray-500 text-sm py-8">无匹配用户</div>';
+        document.getElementById('users-page-info').textContent = '';
+        document.getElementById('users-pagination').innerHTML = '';
+        document.getElementById('users-page-info-m').textContent = '';
+        document.getElementById('users-pagination-m').innerHTML = '';
+        return;
+      }
+
+      // 公共数据
+      _userNameById.clear();
+      _userExpiryById.clear();
+      const rowsHtml = data.rows.map(u => {
+        _userNameById.set(u.id, String(u.username || ''));
+        _userExpiryById.set(u.id, String(u.expires_at || ''));
+        const safeUsername = _escHtml(u.username || '');
+        const safeAvatar = _safeAvatarUrl(u.avatar_url);
+        const safeLastLogin = _escHtml(u.last_login || '-');
+        const safeUserId = Number(u.id) || 0;
+        const statusClass = u.is_blocked ? 'bg-red-500/20 text-red-300' : u.is_frozen ? 'bg-blue-500/20 text-blue-300' : 'bg-emerald-500/20 text-emerald-300';
+        const statusText = u.is_blocked ? '已封禁' : u.is_frozen ? '已冻结' : '正常';
+        const blockBtnClass = u.is_blocked ? 'text-emerald-400' : 'text-red-400';
+        const blockBtnText = u.is_blocked ? '解封' : '封禁';
+        const limitText = u.traffic_limit < 0 ? '∞' : _fmtBytes(u.traffic_limit);
+        const expiryText = u.expires_at ? u.expires_at.slice(0,10) : '永久';
+        const expiryClass = u.expires_at && new Date(u.expires_at) < new Date() ? 'text-red-400' : 'text-gray-400';
+        return { u, safeUsername, safeAvatar, safeLastLogin, safeUserId, statusClass, statusText, blockBtnClass, blockBtnText, limitText, expiryText, expiryClass };
+      });
+
+      // 桌面端表格
+      tbody.innerHTML = rowsHtml.map(({u, safeUsername, safeAvatar, safeLastLogin, safeUserId, statusClass, statusText, blockBtnClass, blockBtnText, limitText, expiryText, expiryClass}) => {
+        return `<tr class="border-b border-white/5 hover:bg-white/[0.02]">
+          <td class="py-3 px-4 flex items-center gap-2">
+            <img src="${safeAvatar}" class="w-6 h-6 rounded-full ring-1 ring-white/10 bg-gray-800 js-avatar-fallback">
+            <span class="text-white text-sm cursor-pointer hover:text-cyan-400 hover:underline js-user-detail" data-user-id="${safeUserId}">${safeUsername}</span>
+            ${u.is_admin ? '<span class="text-[10px] px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-300">管理</span>' : ''}
+          </td>
+          <td class="py-3 px-4 text-xs text-gray-500">${safeUserId}</td>
+          <td class="py-3 px-4 text-xs"><span class="cursor-pointer hover:underline js-set-group" data-user-id="${safeUserId}" data-current-level="${u.trust_level||0}">${_groupHtml(u.trust_level)}</span></td>
+          <td class="py-3 px-4 text-xs text-gray-400">
+            ${_fmtBytes(u.total_traffic || 0)} / <span class="cursor-pointer text-cyan-400 hover:underline js-set-traffic-limit" data-user-id="${safeUserId}" data-current-limit="${u.traffic_limit || 0}">${limitText}</span>
+          </td>
+          <td class="py-3 px-4 text-xs"><span class="cursor-pointer ${expiryClass} hover:underline js-set-expiry" data-user-id="${safeUserId}">${expiryText}</span></td>
+          <td class="py-3 px-4 text-xs text-gray-500">${safeLastLogin}</td>
+          <td class="py-3 px-4"><span class="text-[10px] px-2 py-0.5 rounded-full ${statusClass}">${statusText}</span></td>
+          <td class="py-3 px-4 space-x-2">
+            <form method="POST" action="/admin/api/users/${safeUserId}/toggle-block" class="inline"><input type="hidden" name="_csrf" value="${csrfToken}"><button class="text-xs ${blockBtnClass} hover:underline">${blockBtnText}</button></form>
+            <form method="POST" action="/admin/api/users/${safeUserId}/reset-token" class="inline"><input type="hidden" name="_csrf" value="${csrfToken}"><button type="button" class="text-xs text-amber-400 hover:underline js-reset-token-btn">重置</button></form>
+            ${u.is_admin ? '' : `<button class="text-xs text-gray-500 hover:text-red-400 hover:underline js-delete-user" data-user-id="${safeUserId}" data-username="${safeUsername}">删除</button>`}
+          </td>
+        </tr>`;
+      }).join('');
+
+      // 移动端卡片
+      cards.innerHTML = rowsHtml.map(({u, safeUsername, safeAvatar, safeLastLogin, safeUserId, statusClass, statusText, blockBtnClass, blockBtnText, limitText, expiryText, expiryClass}) => {
+        return `<div class="glass rounded-2xl p-4 space-y-2">
+          <div class="flex items-center justify-between">
+            <div class="flex items-center gap-2">
+              <img src="${safeAvatar}" class="w-6 h-6 rounded-full ring-1 ring-white/10 bg-gray-800 js-avatar-fallback">
+              <span class="text-white text-sm font-medium cursor-pointer hover:text-cyan-400 js-user-detail" data-user-id="${safeUserId}">${safeUsername}</span>
+              ${u.is_admin ? '<span class="text-[10px] px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-300">管理</span>' : ''}
+            </div>
+            <span class="text-[10px] px-2 py-0.5 rounded-full ${statusClass}">${statusText}</span>
+          </div>
+          <div class="grid grid-cols-2 gap-1.5 text-xs">
+            <div><span class="text-gray-500">ID</span><span class="block text-gray-400 mt-0.5">${safeUserId}</span></div>
+            <div><span class="text-gray-500">用户组</span><span class="block mt-0.5 cursor-pointer js-set-group" data-user-id="${safeUserId}" data-current-level="${u.trust_level||0}">${_groupHtml(u.trust_level)}</span></div>
+            <div><span class="text-gray-500">流量</span><span class="block text-gray-400 mt-0.5">${_fmtBytes(u.total_traffic || 0)} / <span class="cursor-pointer text-cyan-400 js-set-traffic-limit" data-user-id="${safeUserId}" data-current-limit="${u.traffic_limit || 0}">${limitText}</span></span></div>
+            <div><span class="text-gray-500">到期</span><span class="block mt-0.5 cursor-pointer ${expiryClass} js-set-expiry" data-user-id="${safeUserId}">${expiryText}</span></div>
+            <div class="col-span-2"><span class="text-gray-500">最后活跃</span><span class="text-gray-500 ml-2">${safeLastLogin}</span></div>
+          </div>
+          <div class="flex gap-3 pt-1.5 border-t border-white/5">
+            <form method="POST" action="/admin/api/users/${safeUserId}/toggle-block" class="inline"><input type="hidden" name="_csrf" value="${csrfToken}"><button class="text-xs ${blockBtnClass} hover:underline">${blockBtnText}</button></form>
+            <form method="POST" action="/admin/api/users/${safeUserId}/reset-token" class="inline"><input type="hidden" name="_csrf" value="${csrfToken}"><button type="button" class="text-xs text-amber-400 hover:underline js-reset-token-btn">重置</button></form>
+            ${u.is_admin ? '' : `<button class="text-xs text-gray-500 hover:text-red-400 hover:underline js-delete-user" data-user-id="${safeUserId}" data-username="${safeUsername}">删除</button>`}
+          </div>
+        </div>`;
+      }).join('');
+
+      // 分页信息
+      const limit = 20;
+      const pages = Math.ceil(total / limit);
+      const start = (page - 1) * limit + 1;
+      const end = Math.min(page * limit, total);
+      document.getElementById('users-page-info').textContent = `第 ${start}-${end} 条，共 ${total} 条`;
+      document.getElementById('users-page-info-m').textContent = `${start}-${end} / ${total}`;
+
+      // 分页按钮
+      const nav = document.getElementById('users-pagination');
+      const navM = document.getElementById('users-pagination-m');
+      nav.innerHTML = '';
+      navM.innerHTML = '';
+      if (pages <= 1) return;
+      const mkBtn = (text, p, active) => {
+        const b = document.createElement('button');
+        b.textContent = text;
+        b.className = active ? 'px-2.5 py-1 rounded-lg text-xs bg-rose-600 text-white' : 'px-2.5 py-1 rounded-lg text-xs glass text-gray-400 hover:text-white hover:bg-white/10 transition';
+        if (!active) b.onclick = () => loadUsers(p);
+        return b;
+      };
+      if (page > 1) { nav.appendChild(mkBtn('‹', page - 1, false)); navM.appendChild(mkBtn('‹', page - 1, false)); }
+      let s = Math.max(1, page - 3), e = Math.min(pages, s + 6);
+      if (e - s < 6) s = Math.max(1, e - 6);
+      for (let p = s; p <= e; p++) { nav.appendChild(mkBtn(p, p, p === page)); navM.appendChild(mkBtn(p, p, p === page)); }
+      if (page < pages) { nav.appendChild(mkBtn('›', page + 1, false)); navM.appendChild(mkBtn('›', page + 1, false)); }
+    };
+
+    window.filterUsers = function() {
+      clearTimeout(_searchTimer);
+      _searchTimer = setTimeout(() => loadUsers(1), 300);
+    };
+
+    document.getElementById('user-search').addEventListener('input', filterUsers);
+    document.querySelectorAll('.js-user-sort[data-sort-col]').forEach((el) => {
+      el.addEventListener('click', () => window.sortUsers(el.dataset.sortCol));
+    });
+    document.addEventListener('error', (e) => {
+      const target = e.target;
+      if (target && target.classList && target.classList.contains('js-avatar-fallback')) {
+        target.style.display = 'none';
+      }
+    }, true);
+    document.addEventListener('click', (e) => {
+      const resetBtn = e.target.closest('.js-reset-token-btn');
+      if (resetBtn) {
+        _confirm('重置订阅？').then((ok) => {
+          if (ok) resetBtn.closest('form')?.submit();
+        });
+        return;
+      }
+      const trafficBtn = e.target.closest('.js-set-traffic-limit');
+      if (trafficBtn) {
+        const userId = Number(trafficBtn.dataset.userId || 0);
+        const currentLimit = Number(trafficBtn.dataset.currentLimit || 0);
+        if (userId > 0) window.setTrafficLimitById(userId, currentLimit);
+        return;
+      }
+      const expiryBtn = e.target.closest('.js-set-expiry');
+      if (expiryBtn) {
+        const userId = Number(expiryBtn.dataset.userId || 0);
+        if (userId > 0) window.setExpiryById(userId);
+        return;
+      }
+      const groupBtn = e.target.closest('.js-set-group');
+      if (groupBtn) {
+        const userId = Number(groupBtn.dataset.userId || 0);
+        const current = Number(groupBtn.dataset.currentLevel || 0);
+        if (userId <= 0) return;
+        const opts = _UG.map((g,i) => `${i === current ? '✓ ' : '  '}${i}: ${g.name}${g.badge ? ' '+g.badge : ''}`).join('\n');
+        _prompt('设置用户组\n' + opts, String(current)).then(val => {
+          if (val === null) return;
+          const level = parseInt(val);
+          if (isNaN(level) || level < 0 || level > 3) return;
+          fetch('/admin/api/users/' + userId + '/set-group', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': csrfToken },
+            body: JSON.stringify({ level })
+          }).then(r => r.json()).then(d => { if (d.ok) loadUsers(_currentPage); });
+        });
+      }
+      const delBtn = e.target.closest('.js-delete-user');
+      if (delBtn) {
+        const userId = Number(delBtn.dataset.userId || 0);
+        const username = delBtn.dataset.username || '';
+        if (userId <= 0) return;
+        _confirm(`确定删除用户 ${username}？此操作不可恢复`).then(ok => {
+          if (!ok) return;
+          fetch('/admin/api/users/' + userId + '/delete', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': csrfToken },
+            body: '{}'
+          }).then(r => r.json()).then(d => { if (d.ok) loadUsers(_currentPage); else alert(d.error || '删除失败'); });
+        });
+      }
+    });
+
+    // 初始加载
+    loadUsers(1);
+  })();
+  </script>
+</div>
+
+<div class="tab-panel" data-tab="logs">
+  <!-- 子 Tab 切换 -->
+  <div class="flex gap-2 mb-4">
+    <button class="text-xs px-3 py-1.5 rounded-lg transition bg-rose-600 text-white js-log-type-btn" data-logtype="system">🖥️ 系统日志</button>
+    <button class="text-xs px-3 py-1.5 rounded-lg transition glass text-gray-400 hover:text-white js-log-type-btn" data-logtype="user">👤 操作日志</button>
+    <button class="text-xs px-3 py-1.5 rounded-lg transition glass text-gray-400 hover:text-white js-log-type-btn" data-logtype="all">📋 全部</button>
+    <div class="flex-1"></div>
+    <button id="btn-clear-logs" class="text-red-400 hover:text-red-300 text-xs">🗑 清空</button>
+  </div>
+
+  <div class="glass rounded-2xl overflow-hidden">
+    <div class="overflow-x-auto max-h-[500px] overflow-y-auto">
+      <table class="w-full text-sm text-left">
+        <thead class="text-gray-500 border-b border-white/5 text-xs sticky top-0" style="background:rgba(15,11,30,0.95)">
+          <tr><th class="py-3 px-4">时间</th><th class="py-3 px-4">来源</th><th class="py-3 px-4">操作</th><th class="py-3 px-4">详情</th></tr>
+        </thead>
+        <tbody class="text-gray-300" id="log-body">
+          <% logs.rows.forEach(function(l) { %>
+          <tr class="border-b border-white/5">
+            <td class="py-2 px-4 text-xs text-gray-500"><%= l.created_at %></td>
+            <td class="py-2 px-4 text-xs"><%= l.ip === 'system' ? '<span class="text-amber-400">系统</span>' : (l.username || '-') %></td>
+            <td class="py-2 px-4 text-xs"><%= l.action %></td>
+            <td class="py-2 px-4 text-xs text-gray-500 max-w-xs truncate"><%= l.detail || '' %></td>
+          </tr>
+          <% }); %>
+        </tbody>
+      </table>
+    </div>
+    <div class="flex items-center justify-between p-3 border-t border-white/5">
+      <span class="text-gray-600 text-xs" id="log-info">共 <%= logs.total %> 条</span>
+      <div class="flex gap-1" id="log-pager"></div>
+    </div>
+  </div>
+</div>
+
+<!-- 安全中心 Tab -->
+<div class="tab-panel space-y-4" data-tab="abuse">
+  <div class="glass rounded-2xl p-5">
+    <h3 class="text-white text-sm font-medium mb-3">⚙️ 风控配置</h3>
+    <p class="text-gray-600 text-xs mb-3">订阅防护参数，保存后立即生效无需重启</p>
+    <div class="grid grid-cols-2 md:grid-cols-4 gap-3 mb-3">
+      <div>
+        <label class="text-gray-500 text-xs block mb-1">防护模式</label>
+        <select id="guard-mode" class="w-full bg-black/30 text-white px-3 py-2 rounded-xl border border-white/10 text-sm">
+          <option value="off">关闭</option><option value="observe">观察（仅记录）</option><option value="enforce">强制（拦截）</option>
+        </select>
+      </div>
+      <div>
+        <label class="text-gray-500 text-xs block mb-1">Token 限速窗口(秒)</label>
+        <input type="number" id="guard-token-window" min="1" max="3600" class="w-full bg-black/30 text-white px-3 py-2 rounded-xl border border-white/10 text-sm">
+      </div>
+      <div>
+        <label class="text-gray-500 text-xs block mb-1">窗口内最大请求</label>
+        <input type="number" id="guard-token-max-req" min="1" max="1000" class="w-full bg-black/30 text-white px-3 py-2 rounded-xl border border-white/10 text-sm">
+      </div>
+      <div>
+        <label class="text-gray-500 text-xs block mb-1">封禁时长(秒)</label>
+        <input type="number" id="guard-token-ban" min="5" max="86400" class="w-full bg-black/30 text-white px-3 py-2 rounded-xl border border-white/10 text-sm">
+      </div>
+      <div>
+        <label class="text-gray-500 text-xs block mb-1">行为检测窗口(秒)</label>
+        <input type="number" id="guard-behavior-window" min="5" max="3600" class="w-full bg-black/30 text-white px-3 py-2 rounded-xl border border-white/10 text-sm">
+      </div>
+      <div>
+        <label class="text-gray-500 text-xs block mb-1">最大 IP 数</label>
+        <input type="number" id="guard-max-ips" min="1" max="100" class="w-full bg-black/30 text-white px-3 py-2 rounded-xl border border-white/10 text-sm">
+      </div>
+      <div>
+        <label class="text-gray-500 text-xs block mb-1">最大 UA 数</label>
+        <input type="number" id="guard-max-uas" min="1" max="100" class="w-full bg-black/30 text-white px-3 py-2 rounded-xl border border-white/10 text-sm">
+      </div>
+      <div>
+        <label class="text-gray-500 text-xs block mb-1">24h UA 超限自动重置订阅和UUID</label>
+        <input type="number" id="guard-auto-reset-ua-24h-limit" min="0" max="20" class="w-full bg-black/30 text-white px-3 py-2 rounded-xl border border-white/10 text-sm" placeholder="0=关闭，2=第3个UA触发">
+      </div>
+    </div>
+    <div class="mb-3">
+      <label class="text-gray-500 text-xs block mb-1">UA 白名单（逗号分隔，留空用默认）</label>
+      <input type="text" id="guard-ua-allowlist" placeholder="clash,v2rayn,shadowrocket..." class="w-full bg-black/30 text-white px-3 py-2 rounded-xl border border-white/10 text-sm">
+    </div>
+    <p class="text-gray-600 text-xs mb-3">示例：设为 <code>2</code> 时，同一用户 24 小时内出现第 3 个不同 UA，会自动重置订阅链接和该用户全部节点 UUID；旧订阅和旧节点配置都会失效，并清空该用户最近 24 小时的订阅访问记录重新计数。</p>
+    <button id="btn-save-guard" class="bg-rose-600 hover:bg-rose-500 text-white px-4 py-2 rounded-xl text-sm transition">保存</button>
+  </div>
+
+  <div class="glass rounded-2xl p-5">
+    <div class="flex items-center justify-between mb-4">
+      <h3 class="text-white text-sm font-medium">🛡️ 安全中心</h3>
+      <div class="flex items-center gap-2 flex-wrap">
+        <button id="security-view-substats" class="bg-rose-600 hover:bg-rose-500 text-white text-xs px-3 py-1.5 rounded-lg transition">订阅访问统计</button>
+        <button id="security-view-multinode" class="glass text-gray-300 hover:text-white text-xs px-3 py-1.5 rounded-lg transition">并发多节点观察</button>
+      </div>
+    </div>
+    <div id="security-substats-panel">
+      <div class="flex items-center gap-2 flex-wrap mb-3">
+        <select id="substats-hours" class="bg-black/30 text-gray-300 text-xs px-2 py-1 rounded-lg border border-white/10">
+          <option value="1">1小时</option><option value="24" selected>24小时</option><option value="72">3天</option><option value="168">7天</option>
+        </select>
+        <select id="substats-sort" class="bg-black/30 text-gray-300 text-xs px-2 py-1 rounded-lg border border-white/10">
+          <option value="request">总请求</option><option value="success">成功数</option><option value="deny">拒绝数</option><option value="ok_rate">成功率</option><option value="ip">IP数量</option><option value="ua">UA数量</option><option value="last">最近拉取</option>
+        </select>
+        <label class="flex items-center gap-1 text-gray-400 text-xs"><input type="checkbox" id="substats-high" class="accent-rose-500"> 仅高风险用户</label>
+        <button id="btn-load-substats" class="bg-rose-600 hover:bg-rose-500 text-white text-xs px-3 py-1.5 rounded-lg transition">查询</button>
+      </div>
+      <div id="substats-overview" class="grid grid-cols-2 md:grid-cols-4 gap-2 mb-3"></div>
+      <div id="substats-result">
+        <p class="text-gray-600 text-sm text-center py-4">点击「查询」查看统计</p>
+      </div>
+      <div id="substats-pager" class="flex justify-center gap-2 mt-3"></div>
+    </div>
+    <div id="security-multinode-panel" class="hidden">
+      <div class="flex items-center gap-2 flex-wrap mb-3">
+        <select id="multinode-hours" class="bg-black/30 text-gray-300 text-xs px-2 py-1 rounded-lg border border-white/10">
+          <option value="1">1小时</option><option value="24" selected>24小时</option><option value="72">3天</option><option value="168">7天</option>
+        </select>
+        <button id="btn-load-multinode" class="bg-rose-600 hover:bg-rose-500 text-white text-xs px-3 py-1.5 rounded-lg transition">查询</button>
+      </div>
+      <div id="multinode-overview" class="grid grid-cols-2 md:grid-cols-4 gap-2 mb-3"></div>
+      <div id="multinode-result">
+        <p class="text-gray-600 text-sm text-center py-4">点击「查询」查看并发观察</p>
+      </div>
+      <div id="multinode-pager" class="flex justify-center gap-2 mt-3"></div>
+    </div>
+  </div>
+  <div class="glass rounded-2xl p-5 hidden" id="substats-detail-panel">
+    <h3 class="text-white text-sm font-medium mb-3" id="substats-detail-title">用户详情</h3>
+    <div id="substats-detail"></div>
+  </div>
+</div>
+
+<!-- 通知 Tab（仅 TG 配置和事件开关） -->
+<div class="tab-panel space-y-4" data-tab="notify">
+  <div class="glass rounded-2xl p-5">
+    <h3 class="text-white text-sm font-medium mb-4">🔔 Telegram 通知配置</h3>
+    <div class="grid grid-cols-2 gap-3 mb-4">
+      <div>
+        <label class="text-gray-500 text-xs block mb-1">Bot Token</label>
+        <input type="password" id="tg-token" value="" placeholder="<%= tgBotToken ? '已配置（留空保留原值）' : '123456:ABC-DEF...' %>" class="w-full bg-black/30 text-white px-3 py-2 rounded-xl border border-white/10 text-sm">
+      </div>
+      <div>
+        <label class="text-gray-500 text-xs block mb-1">Chat ID</label>
+        <input type="text" id="tg-chat-id" value="<%= (typeof tgChatId !== 'undefined' ? tgChatId : '') %>" placeholder="-100123456789" class="w-full bg-black/30 text-white px-3 py-2 rounded-xl border border-white/10 text-sm">
+      </div>
+    </div>
+    <div class="flex gap-2 mb-6">
+      <button id="btn-save-tg" class="bg-rose-600 hover:bg-rose-500 text-white text-xs px-4 py-2 rounded-xl transition">保存</button>
+      <button id="btn-test-tg" class="glass text-gray-300 hover:text-white text-xs px-4 py-2 rounded-xl transition">发送测试</button>
+    </div>
+    <h3 class="text-white text-sm font-medium mb-3">📧 SMTP 邮件配置</h3>
+    <div class="space-y-3 mb-6">
+      <label class="flex items-center justify-between p-3 rounded-xl bg-black/20 cursor-pointer hover:bg-white/5 transition">
+        <span class="text-white text-sm">启用 SMTP 发信</span>
+        <div class="relative flex-shrink-0">
+          <input type="checkbox" id="smtp-enabled" class="sr-only peer" <%= smtpEnabled ? 'checked' : '' %>>
+          <div class="w-9 h-5 bg-gray-600 rounded-full peer-checked:bg-rose-500 transition-colors"></div>
+          <div class="absolute left-0.5 top-0.5 w-4 h-4 bg-white rounded-full transition-transform peer-checked:translate-x-4"></div>
+        </div>
+      </label>
+      <div class="grid grid-cols-2 gap-3">
+        <div>
+          <label class="text-gray-500 text-xs block mb-1">SMTP Host</label>
+          <input type="text" id="smtp-host" value="<%= smtpHost %>" placeholder="smtp.example.com" class="w-full bg-black/30 text-white px-3 py-2 rounded-xl border border-white/10 text-sm">
+        </div>
+        <div>
+          <label class="text-gray-500 text-xs block mb-1">SMTP Port</label>
+          <input type="number" id="smtp-port" value="<%= smtpPort %>" min="1" max="65535" class="w-full bg-black/30 text-white px-3 py-2 rounded-xl border border-white/10 text-sm">
+        </div>
+        <div>
+          <label class="text-gray-500 text-xs block mb-1">用户名</label>
+          <input type="text" id="smtp-user" value="<%= smtpUser %>" placeholder="no-reply@example.com" class="w-full bg-black/30 text-white px-3 py-2 rounded-xl border border-white/10 text-sm">
+        </div>
+        <div>
+          <label class="text-gray-500 text-xs block mb-1">密码（留空不修改）</label>
+          <input type="password" id="smtp-pass" value="" placeholder="••••••••" class="w-full bg-black/30 text-white px-3 py-2 rounded-xl border border-white/10 text-sm">
+        </div>
+        <div>
+          <label class="text-gray-500 text-xs block mb-1">发件人名称</label>
+          <input type="text" id="smtp-from-name" value="<%= smtpFromName %>" placeholder="大姨子的诱惑" class="w-full bg-black/30 text-white px-3 py-2 rounded-xl border border-white/10 text-sm">
+        </div>
+        <div>
+          <label class="text-gray-500 text-xs block mb-1">发件邮箱</label>
+          <input type="email" id="smtp-from-email" value="<%= smtpFromEmail %>" placeholder="no-reply@example.com" class="w-full bg-black/30 text-white px-3 py-2 rounded-xl border border-white/10 text-sm">
+        </div>
+      </div>
+      <div class="flex items-center gap-2">
+        <label class="flex items-center gap-2 text-gray-400 text-xs">
+          <input type="checkbox" id="smtp-secure" class="accent-rose-500" <%= smtpSecure ? 'checked' : '' %>>
+          使用 SSL/TLS (通常 465 端口)
+        </label>
+      </div>
+      <div class="flex flex-wrap gap-2">
+        <button id="btn-save-smtp" class="bg-rose-600 hover:bg-rose-500 text-white text-xs px-4 py-2 rounded-xl transition">保存 SMTP</button>
+        <input type="email" id="smtp-test-to" placeholder="测试收件邮箱" class="flex-1 min-w-[200px] bg-black/30 text-white px-3 py-2 rounded-xl border border-white/10 text-sm">
+        <button id="btn-test-smtp" class="glass text-gray-300 hover:text-white text-xs px-4 py-2 rounded-xl transition">发送测试邮件</button>
+      </div>
+    </div>
+    <h3 class="text-white text-sm font-medium mb-3">通知事件</h3>
+    <div class="space-y-2">
+      <% var events = [
+        { key: 'tg_on_node_down', label: '🔴 节点离线/恢复', desc: '节点上下线状态变化时通知' },
+        { key: 'tg_on_node_blocked', label: '🧱 节点被墙', desc: '检测到节点疑似被墙时通知' },
+        { key: 'tg_on_rotate', label: '🔄 自动轮换', desc: '每日轮换完成后通知' },
+        { key: 'tg_on_abuse', label: '⚠️ 订阅异常', desc: '检测到多IP拉取时通知' },
+        { key: 'tg_on_traffic', label: '📊 流量超标', desc: '用户流量超过设定阈值时通知' },
+        { key: 'tg_on_register', label: '👤 新用户注册', desc: '有新用户注册时通知' },
+        { key: 'tg_on_deploy', label: '🚀 节点部署', desc: '节点部署成功或失败时通知' }
+      ]; events.forEach(function(ev) { %>
+        <label class="flex items-center justify-between p-3 rounded-xl bg-black/20 cursor-pointer hover:bg-white/5 transition">
+          <div>
+            <span class="text-white text-sm"><%= ev.label %></span>
+            <span class="text-gray-600 text-xs ml-2"><%= ev.desc %></span>
+          </div>
+          <div class="relative flex-shrink-0">
+            <input type="checkbox" class="tg-event sr-only peer" data-key="<%= ev.key %>" <%= (typeof tgEvents !== 'undefined' && tgEvents[ev.key]) ? 'checked' : '' %>>
+            <div class="w-9 h-5 bg-gray-600 rounded-full peer-checked:bg-rose-500 transition-colors"></div>
+            <div class="absolute left-0.5 top-0.5 w-4 h-4 bg-white rounded-full transition-transform peer-checked:translate-x-4"></div>
+          </div>
+        </label>
+      <% }); %>
+    </div>
+  </div>
+</div>
+
+<!-- 设置 Tab -->
+<div class="tab-panel space-y-4" data-tab="settings">
+  <div class="glass rounded-2xl p-5">
+    <h3 class="text-white text-sm font-medium mb-3">📢 公告管理</h3>
+    <div class="flex gap-2">
+      <input type="text" id="announcement-text" value="<%= announcement %>" placeholder="输入公告内容（留空则不显示）" class="flex-1 bg-black/30 text-white px-4 py-2 rounded-xl border border-white/10 text-sm">
+      <button id="btn-save-announcement" class="bg-rose-600 hover:bg-rose-500 text-white px-4 py-2 rounded-xl text-sm transition">保存</button>
+    </div>
+  </div>
+
+  <div class="glass rounded-2xl p-5">
+    <h3 class="text-white text-sm font-medium mb-3">👥 注册管理</h3>
+    <p class="text-gray-600 text-xs mb-3">当前已注册 <span class="text-rose-400"><%= userCount %></span> 人，已绑定 TG <span class="text-rose-400"><%= tgBoundUserCount %></span> 人</p>
+    <label class="flex items-center justify-between p-3 rounded-xl bg-black/20 cursor-pointer hover:bg-white/5 transition">
+      <div>
+        <span class="text-white text-sm">开放注册</span>
+        <p class="text-gray-600 text-[11px] mt-0.5">关闭后新用户无法注册</p>
+      </div>
+      <div class="relative">
+        <input type="checkbox" id="registration-open-toggle" class="sr-only peer" <%= registrationOpen ? 'checked' : '' %>>
+        <div class="w-9 h-5 bg-gray-600 rounded-full peer-checked:bg-rose-500 transition-colors"></div>
+        <div class="absolute left-0.5 top-0.5 w-4 h-4 bg-white rounded-full transition-transform peer-checked:translate-x-4"></div>
+      </div>
+    </label>
+    <label class="flex items-center justify-between p-3 rounded-xl bg-black/20 cursor-pointer hover:bg-white/5 transition mt-2">
+      <div>
+        <span class="text-white text-sm">邀请码注册</span>
+        <p class="text-gray-600 text-[11px] mt-0.5">开启后非首位用户必须填写邀请码；关闭后可直接注册</p>
+      </div>
+      <div class="relative">
+        <input type="checkbox" id="invite-registration-open-toggle" class="sr-only peer" <%= inviteRegistrationOpen ? 'checked' : '' %>>
+        <div class="w-9 h-5 bg-gray-600 rounded-full peer-checked:bg-rose-500 transition-colors"></div>
+        <div class="absolute left-0.5 top-0.5 w-4 h-4 bg-white rounded-full transition-transform peer-checked:translate-x-4"></div>
+      </div>
+    </label>
+    <label class="flex items-center justify-between p-3 rounded-xl bg-black/20 cursor-pointer hover:bg-white/5 transition mt-2">
+      <div>
+        <span class="text-white text-sm">NodeLoc 注册</span>
+        <p class="text-gray-600 text-[11px] mt-0.5">关闭后 NodeLoc 新用户无法注册（老用户登录不受影响）</p>
+      </div>
+      <div class="relative">
+        <input type="checkbox" id="nodeloc-registration-open-toggle" class="sr-only peer" <%= nodelocRegistrationOpen ? 'checked' : '' %>>
+        <div class="w-9 h-5 bg-gray-600 rounded-full peer-checked:bg-rose-500 transition-colors"></div>
+        <div class="absolute left-0.5 top-0.5 w-4 h-4 bg-white rounded-full transition-transform peer-checked:translate-x-4"></div>
+      </div>
+    </label>
+    <label class="flex items-center justify-between p-3 rounded-xl bg-black/20 cursor-pointer hover:bg-white/5 transition mt-2">
+      <div>
+        <span class="text-white text-sm">NodeLoc 登录 (联合登录)</span>
+        <p class="text-gray-600 text-[11px] mt-0.5">关闭后登录页将隐藏 NodeLoc 登录入口</p>
+      </div>
+      <div class="relative">
+        <input type="checkbox" id="nodeloc-login-open-toggle" class="sr-only peer" <%= nodelocLoginOpen ? 'checked' : '' %>>
+        <div class="w-9 h-5 bg-gray-600 rounded-full peer-checked:bg-rose-500 transition-colors"></div>
+        <div class="absolute left-0.5 top-0.5 w-4 h-4 bg-white rounded-full transition-transform peer-checked:translate-x-4"></div>
+      </div>
+    </label>
+    <label class="flex items-center justify-between p-3 rounded-xl bg-black/20 cursor-pointer hover:bg-white/5 transition mt-2">
+      <div>
+        <span class="text-white text-sm">未绑定 TG 自动删除</span>
+        <p class="text-gray-600 text-[11px] mt-0.5">开启后，注册超过 <%= autoDeleteUnboundDays %> 天仍未绑定 Telegram 的非管理员账号将于每天凌晨自动删除（含老用户，不可恢复）</p>
+      </div>
+      <div class="relative">
+        <input type="checkbox" id="auto-delete-unbound-toggle" class="sr-only peer" <%= autoDeleteUnboundEnabled ? 'checked' : '' %>>
+        <div class="w-9 h-5 bg-gray-600 rounded-full peer-checked:bg-rose-500 transition-colors"></div>
+        <div class="absolute left-0.5 top-0.5 w-4 h-4 bg-white rounded-full transition-transform peer-checked:translate-x-4"></div>
+      </div>
+    </label>
+    <div class="mt-3 p-3 rounded-xl bg-black/20">
+      <label class="text-gray-500 text-xs block mb-1">允许注册的邮箱后缀</label>
+      <div class="flex gap-2">
+        <input type="text" id="allowed-email-domains" value="<%= allowedEmailDomains %>" placeholder="留空不限制，如 gmail.com,qq.com" class="flex-1 bg-black/30 text-white px-3 py-2 rounded-xl border border-white/10 text-sm">
+        <button id="btn-save-email-domains" class="bg-rose-600 hover:bg-rose-500 text-white px-3 py-2 rounded-xl text-sm transition">保存</button>
+      </div>
+      <p class="text-gray-600 text-[11px] mt-1">多个后缀用逗号分隔，留空表示不限制</p>
+    </div>
+  </div>
+
+  <div class="glass rounded-2xl p-5">
+    <h3 class="text-white text-sm font-medium mb-3">📡 订阅协议展示</h3>
+    <p class="text-gray-600 text-xs mb-3">控制用户面板中展示哪些协议的订阅地址</p>
+    <div class="space-y-2">
+      <label class="flex items-center justify-between p-3 rounded-xl bg-black/20 cursor-pointer hover:bg-white/5 transition">
+        <div>
+          <span class="text-white text-sm">🌐 VLESS（IPv4）</span>
+        </div>
+        <div class="relative">
+          <input type="checkbox" id="sub-visible-vless" class="sr-only peer" <%= subVisibleVless ? 'checked' : '' %>>
+          <div class="w-9 h-5 bg-gray-600 rounded-full peer-checked:bg-rose-500 transition-colors"></div>
+          <div class="absolute left-0.5 top-0.5 w-4 h-4 bg-white rounded-full transition-transform peer-checked:translate-x-4"></div>
+        </div>
+      </label>
+      <label class="flex items-center justify-between p-3 rounded-xl bg-black/20 cursor-pointer hover:bg-white/5 transition">
+        <div>
+          <span class="text-white text-sm">🌐 Shadowsocks（IPv6）</span>
+        </div>
+        <div class="relative">
+          <input type="checkbox" id="sub-visible-ss" class="sr-only peer" <%= subVisibleSs ? 'checked' : '' %>>
+          <div class="w-9 h-5 bg-gray-600 rounded-full peer-checked:bg-rose-500 transition-colors"></div>
+          <div class="absolute left-0.5 top-0.5 w-4 h-4 bg-white rounded-full transition-transform peer-checked:translate-x-4"></div>
+        </div>
+      </label>
+      <label class="flex items-center justify-between p-3 rounded-xl bg-black/20 cursor-pointer hover:bg-white/5 transition">
+        <div>
+          <span class="text-white text-sm">⚡ Hysteria 2</span>
+        </div>
+        <div class="relative">
+          <input type="checkbox" id="sub-visible-hy2" class="sr-only peer" <%= subVisibleHy2 ? 'checked' : '' %>>
+          <div class="w-9 h-5 bg-gray-600 rounded-full peer-checked:bg-rose-500 transition-colors"></div>
+          <div class="absolute left-0.5 top-0.5 w-4 h-4 bg-white rounded-full transition-transform peer-checked:translate-x-4"></div>
+        </div>
+      </label>
+    </div>
+    <button id="btn-save-sub-visibility" class="bg-rose-600 hover:bg-rose-500 text-white px-4 py-2 rounded-xl text-sm transition mt-3">保存</button>
+  </div>
+
+  <div class="glass rounded-2xl p-5">
+    <h3 class="text-white text-sm font-medium mb-3">🔄 用户组重置周期</h3>
+    <p class="text-gray-600 text-xs mb-3">设置每个用户组的 UUID 和订阅 Token 重置间隔（天），0 = 不重置</p>
+    <div id="group-reset-config" style="display:grid;grid-template-columns:80px 1fr 1fr;gap:8px 12px;align-items:center">
+      <span class="text-xs text-gray-500">用户组</span><span class="text-xs text-gray-500">UUID 重置(天)</span><span class="text-xs text-gray-500">订阅重置(天)</span>
+    </div>
+    <button id="btn-save-group-reset" class="bg-rose-600 hover:bg-rose-500 text-white px-4 py-2 rounded-xl text-sm transition mt-3">保存</button>
+    <div class="mt-4 pt-3 border-t border-white/10">
+      <p class="text-gray-500 text-xs mb-2">端口轮换周期（天），0 = 不轮换，所有节点共享同一周期</p>
+      <div class="flex items-center gap-2">
+        <span class="text-xs text-gray-300">🔌 端口轮换</span>
+        <input type="number" id="port-rotate-days" min="0" max="365" value="1" class="w-20 bg-black/30 text-white px-3 py-1.5 rounded-xl border border-white/10 text-sm">
+        <span class="text-xs text-gray-500">天</span>
+      </div>
+    </div>
+  </div>
+
+  <div class="glass rounded-2xl p-5">
+    <h3 class="text-white text-sm font-medium mb-3">📦 默认流量限额</h3>
+    <p class="text-gray-600 text-xs mb-3">新用户注册时的默认流量上限（GB），-1 = 无限</p>
+    <div class="flex flex-wrap gap-2">
+      <input id="default-traffic-limit" value="<%= defaultTrafficLimit < 0 ? -1 : (defaultTrafficLimit / 1073741824).toFixed(2) %>" min="-1" step="any" placeholder="-1 = 无限" class="flex-1 min-w-[120px] bg-black/30 text-white px-4 py-2 rounded-xl border border-white/10 text-sm [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none">
+      <span class="text-gray-500 text-sm self-center">GB</span>
+      <button id="btn-save-default-traffic-limit" class="bg-rose-600 hover:bg-rose-500 text-white px-4 py-2 rounded-xl text-sm transition">保存</button>
+      <button id="btn-apply-default-traffic-limit" class="glass text-gray-200 px-4 py-2 rounded-xl text-sm hover:bg-white/10 transition whitespace-nowrap">应用到全部用户</button>
+    </div>
+    <div class="mt-4 pt-4 border-t border-white/10">
+      <h4 class="text-white text-sm font-medium mb-2">默认用户分组</h4>
+      <p class="text-gray-600 text-xs mb-3">新用户注册后的初始用户组</p>
+      <div class="flex flex-wrap gap-2">
+        <select id="default-user-group" class="flex-1 min-w-[160px] bg-black/30 text-white px-4 py-2 rounded-xl border border-white/10 text-sm">
+          <% USER_GROUPS.forEach(function(g, i) { %>
+          <option value="<%= i %>" <%= (defaultUserGroup || 0) === i ? 'selected' : '' %>><%= g.badge ? g.badge + ' ' : '' %><%= g.name %></option>
+          <% }); %>
+        </select>
+        <button id="btn-save-default-user-group" class="bg-rose-600 hover:bg-rose-500 text-white px-4 py-2 rounded-xl text-sm transition">保存</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 自动化运维配置 -->
+  <div class="glass rounded-2xl p-5">
+    <div class="flex items-center justify-between mb-4">
+      <h3 class="text-white text-sm font-medium">🤖 自动化运维</h3>
+      <button id="btn-save-automation" class="bg-rose-600 hover:bg-rose-500 text-white px-4 py-2 rounded-xl text-sm transition">保存配置</button>
+    </div>
+
+    <!-- 流量超标策略 -->
+    <div class="mb-4">
+      <h4 class="text-gray-400 text-xs font-medium mb-2 uppercase tracking-wider">流量超标策略</h4>
+      <div class="space-y-3">
+        <label class="flex items-center justify-between p-3 rounded-xl bg-black/20 cursor-pointer hover:bg-white/5 transition">
+          <div>
+            <span class="text-white text-sm">流量超标自动冻结</span>
+            <p class="text-gray-600 text-[11px] mt-0.5">关闭后仅发送通知，不会自动冻结用户；用户登录面板后自动解冻</p>
+          </div>
+          <div class="relative">
+            <input type="checkbox" id="auto-freeze-traffic-enabled" class="sr-only peer">
+            <div class="w-9 h-5 bg-gray-600 rounded-full peer-checked:bg-rose-500 transition-colors"></div>
+            <div class="absolute left-0.5 top-0.5 w-4 h-4 bg-white rounded-full transition-transform peer-checked:translate-x-4"></div>
+          </div>
+        </label>
+        <div id="traffic-freeze-options">
+          <div>
+            <label class="text-gray-500 text-xs block mb-1">处置方式</label>
+            <select id="traffic-exceed-action" class="w-full bg-black/30 text-white px-3 py-2 rounded-xl border border-white/10 text-sm">
+              <option value="notify">仅通知（超硬上限才冻结）</option>
+              <option value="freeze">超阈值自动冻结</option>
+            </select>
+          </div>
+          <div class="grid grid-cols-2 gap-3 mt-3">
+            <div>
+              <label class="text-gray-500 text-xs block mb-1">告警阈值 (GB/天)</label>
+              <input type="number" id="traffic-exceed-threshold-gb" min="1" max="10000" value="20" class="w-full bg-black/30 text-white px-3 py-2 rounded-xl border border-white/10 text-sm">
+            </div>
+            <div>
+              <label class="text-gray-500 text-xs block mb-1">硬上限 (GB/天)</label>
+              <input type="number" id="traffic-exceed-hard-limit-gb" min="1" max="10000" value="50" class="w-full bg-black/30 text-white px-3 py-2 rounded-xl border border-white/10 text-sm">
+            </div>
+          </div>
+          <p class="text-gray-600 text-[11px] mt-2">「仅通知」模式：超告警阈值发通知，超硬上限才冻结；「自动冻结」模式：超阈值即冻结</p>
+        </div>
+      </div>
+    </div>
+
+    <!-- 用户流量预警（发到用户 TG 私聊） -->
+    <div class="mb-4">
+      <h4 class="text-gray-400 text-xs font-medium mb-2 uppercase tracking-wider">用户流量预警</h4>
+      <div class="space-y-3">
+        <label class="flex items-center justify-between p-3 rounded-xl bg-black/20 cursor-pointer hover:bg-white/5 transition">
+          <div>
+            <span class="text-white text-sm">单日流量预警</span>
+            <p class="text-gray-600 text-[11px] mt-0.5">已绑定 TG 的用户当日流量超过阈值时，由机器人私聊提醒用户检查订阅是否泄露。同一用户每日仅提醒一次。</p>
+          </div>
+          <div class="relative">
+            <input type="checkbox" id="traffic-alert-enabled" class="sr-only peer">
+            <div class="w-9 h-5 bg-gray-600 rounded-full peer-checked:bg-rose-500 transition-colors"></div>
+            <div class="absolute left-0.5 top-0.5 w-4 h-4 bg-white rounded-full transition-transform peer-checked:translate-x-4"></div>
+          </div>
+        </label>
+        <div id="traffic-alert-options">
+          <label class="text-gray-500 text-xs block mb-1">阈值 (GB/天)</label>
+          <div class="flex items-center gap-2">
+            <input type="number" id="traffic-alert-threshold-gb" min="1" max="10000" value="100" class="w-32 bg-black/30 text-white px-3 py-2 rounded-xl border border-white/10 text-sm">
+            <span class="text-gray-500 text-sm">GB</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- TG 未签到自动冻结 -->
+    <div class="mb-4">
+      <h4 class="text-gray-400 text-xs font-medium mb-2 uppercase tracking-wider">TG 未签到策略</h4>
+      <div class="space-y-3">
+        <label class="flex items-center justify-between p-3 rounded-xl bg-black/20 cursor-pointer hover:bg-white/5 transition">
+          <div>
+            <span class="text-white text-sm">未签到自动冻结</span>
+            <p class="text-gray-600 text-[11px] mt-0.5">已绑定 TG 的用户超过指定天数未在 TG 签到将被自动冻结；用户在 TG 签到一次后自动解冻。未绑定 TG 的用户不受影响。</p>
+          </div>
+          <div class="relative">
+            <input type="checkbox" id="auto-freeze-no-checkin-enabled" class="sr-only peer">
+            <div class="w-9 h-5 bg-gray-600 rounded-full peer-checked:bg-rose-500 transition-colors"></div>
+            <div class="absolute left-0.5 top-0.5 w-4 h-4 bg-white rounded-full transition-transform peer-checked:translate-x-4"></div>
+          </div>
+        </label>
+        <div id="no-checkin-freeze-options">
+          <label class="text-gray-500 text-xs block mb-1">未签到天数阈值</label>
+          <div class="flex items-center gap-2">
+            <input type="number" id="auto-freeze-no-checkin-days" min="1" max="365" value="30" class="w-32 bg-black/30 text-white px-3 py-2 rounded-xl border border-white/10 text-sm">
+            <span class="text-gray-500 text-sm">天</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Agent 批量更新 -->
+    <div>
+      <h4 class="text-gray-400 text-xs font-medium mb-2 uppercase tracking-wider">Agent 管理</h4>
+      <div class="p-3 rounded-xl bg-black/20">
+        <div class="flex items-center justify-between">
+          <div>
+            <span class="text-white text-sm">批量更新所有在线 Agent</span>
+            <p class="text-gray-600 text-[11px] mt-0.5">向所有在线 Agent 下发 self_update 命令，自动下载最新代码并重启</p>
+          </div>
+          <button id="btn-agent-update-all" class="bg-amber-600 hover:bg-amber-500 text-white px-4 py-2 rounded-xl text-sm transition whitespace-nowrap">🚀 一键更新</button>
+        </div>
+        <div id="agent-update-result" class="hidden mt-2 text-xs text-gray-400"></div>
+      </div>
+    </div>
+  </div>
+</div>
+<div class="tab-panel space-y-4" data-tab="aws">
+  <!-- 实例仪表盘 -->
+  <div class="glass rounded-2xl p-5">
+    <div class="flex items-center justify-between mb-3">
+      <h3 class="text-white text-sm font-medium">📊 实例仪表盘</h3>
+      <div class="flex gap-2">
+        <button type="button" id="btn-load-all-instances" class="text-xs glass text-gray-300 hover:text-white px-3 py-1.5 rounded-xl transition">🔄 刷新实例</button>
+        <button type="button" id="btn-auto-bind-aws" class="text-xs glass text-gray-300 hover:text-white px-3 py-1.5 rounded-xl transition">🔗 智能绑定</button>
+      </div>
+    </div>
+    <div id="aws-instances-loading" class="hidden text-center py-8 text-gray-500 text-sm">⏳ 加载中...</div>
+    <div id="aws-instances-container" class="text-center py-8 text-gray-500 text-xs">点击「🔄 刷新实例」加载</div>
+  </div>
+
+  <!-- 区域筛选 -->
+  <div class="glass rounded-2xl p-5">
+    <div class="flex items-center justify-between mb-3 gap-2 flex-wrap">
+      <div>
+        <h3 class="text-white text-sm font-medium">🌍 区域筛选</h3>
+        <p class="text-gray-600 text-[11px] mt-0.5">关闭不需要的区域可显著加快「刷新实例」速度。<span class="text-cyan-400">EC2+LS</span> 表示该区域同时支持 EC2 与 Lightsail，<span class="text-gray-400">仅 EC2</span> 表示只支持 EC2。</p>
+      </div>
+      <div class="flex gap-2">
+        <button type="button" id="btn-aws-regions-all" class="text-xs glass text-gray-300 hover:text-white px-3 py-1.5 rounded-xl transition">全选</button>
+        <button type="button" id="btn-aws-regions-none" class="text-xs glass text-gray-300 hover:text-white px-3 py-1.5 rounded-xl transition">全不选</button>
+        <button type="button" id="btn-aws-regions-save" class="text-xs bg-rose-600 hover:bg-rose-500 text-white px-3 py-1.5 rounded-xl transition">保存</button>
+      </div>
+    </div>
+    <div id="aws-regions-list" class="text-center py-6 text-gray-500 text-xs">⏳ 加载中...</div>
+  </div>
+
+  <div class="glass rounded-2xl p-5">
+    <div class="flex items-center justify-between mb-3">
+      <h3 class="text-white text-sm font-medium">☁️ AWS 配置</h3>
+      <span id="aws-status" class="text-xs px-2 py-0.5 rounded-full bg-gray-500/20 text-gray-400">检测中...</span>
+    </div>
+    <div class="grid grid-cols-2 gap-3">
+      <div>
+        <label class="text-gray-500 text-xs block mb-1">账号名称</label>
+        <input type="text" id="aws-name" placeholder="如 aws-01" class="w-full bg-black/30 text-white px-3 py-2 rounded-xl border border-white/10 text-sm">
+      </div>
+      <div>
+        <label class="text-gray-500 text-xs block mb-1">Access Key ID</label>
+        <input type="password" id="aws-ak" placeholder="AKIA..." class="w-full bg-black/30 text-white px-3 py-2 rounded-xl border border-white/10 text-sm">
+      </div>
+      <div class="col-span-2">
+        <label class="text-gray-500 text-xs block mb-1">Secret Access Key</label>
+        <input type="password" id="aws-sk" placeholder="xxxxxxxx" class="w-full bg-black/30 text-white px-3 py-2 rounded-xl border border-white/10 text-sm">
+      </div>
+      <div class="col-span-2">
+        <label class="text-gray-500 text-xs block mb-1">SOCKS5 代理 (可选)</label>
+        <div class="flex gap-2">
+          <input type="text" id="aws-socks-url" placeholder="socks5://user:pass@host:port" class="flex-1 bg-black/30 text-white px-3 py-2 rounded-xl border border-white/10 text-sm">
+          <button type="button" id="btn-test-socks-proxy" class="glass text-gray-300 hover:text-white px-4 py-2 rounded-xl text-sm transition">验证</button>
+        </div>
+        <p id="aws-socks-test-result" class="text-[11px] text-gray-500 mt-1"></p>
+      </div>
+      <div class="col-span-2">
+        <button type="button" id="btn-save-aws-config" class="w-full bg-rose-600 hover:bg-rose-500 text-white py-2 rounded-xl text-sm transition mt-1">新增账号</button>
+      </div>
+    </div>
+    <div id="aws-accounts" class="mt-3 space-y-2"></div>
+  </div>
+
+  <!-- 节点 AWS 绑定 -->
+  <div class="glass rounded-2xl p-5">
+    <h3 class="text-white text-sm font-medium mb-3">🔗 节点绑定 AWS 实例</h3>
+    <p class="text-gray-600 text-xs mb-3">绑定后，被墙时自动换 IP；也可手动换 IP</p>
+    <div class="space-y-2">
+      <% nodes.filter(n => n.protocol !== 'hy2').forEach(function(n) { %>
+      <div class="flex items-center justify-between p-3 rounded-xl bg-black/20">
+        <div class="flex items-center gap-2">
+          <span class="text-white text-sm"><%= n.name %></span>
+          <span class="text-gray-500 text-xs"><%= n.host %></span>
+          <% if (n.aws_instance_id) { %>
+            <span class="text-[10px] px-1.5 py-0.5 rounded bg-blue-500/20 text-blue-300"><%= n.aws_type || 'ec2' %>: <%= n.aws_instance_id %> (账号#<%= n.aws_account_id || '-' %>)</span>
+          <% } %>
+        </div>
+        <div class="flex items-center gap-2">
+          <% if (n.aws_instance_id) { %>
+            <button type="button" class="text-xs bg-amber-600 hover:bg-amber-500 text-white px-3 py-1 rounded-lg transition js-swap-node-ip" data-node-id="<%= n.id %>" data-node-name="<%= n.name %>">🔄 换 IP</button>
+            <button type="button" class="text-xs text-gray-500 hover:text-red-400 js-unbind-aws" data-node-id="<%= n.id %>">解绑</button>
+          <% } else { %>
+            <button type="button" class="text-xs text-blue-400 hover:text-blue-300 js-show-bind-aws" data-node-id="<%= n.id %>">绑定</button>
+          <% } %>
+        </div>
+      </div>
+      <% }); %>
+    </div>
+  </div>
+
+  <!-- 账号编辑弹窗 -->
+  <div id="aws-edit-modal" class="hidden fixed inset-0 z-50 flex items-center justify-center bg-black/60">
+    <div class="glass rounded-2xl p-6 w-[92%] max-w-md border border-white/10">
+      <h3 class="text-white text-sm font-medium mb-4">编辑 AWS 账号</h3>
+      <input type="hidden" id="edit-aws-id">
+      <div class="space-y-3">
+        <div>
+          <label class="text-gray-500 text-xs block mb-1">备注 / 账号名</label>
+          <input type="text" id="edit-aws-name" class="w-full bg-black/30 text-white px-3 py-2 rounded-xl border border-white/10 text-sm">
+        </div>
+        <div class="grid grid-cols-2 gap-2">
+          <div>
+            <label class="text-gray-500 text-xs block mb-1">Access Key</label>
+            <input type="text" id="edit-aws-ak" readonly class="w-full bg-black/20 text-gray-400 px-3 py-2 rounded-xl border border-white/10 text-sm">
+          </div>
+          <div>
+            <label class="text-gray-500 text-xs block mb-1">Secret Key</label>
+            <input type="text" id="edit-aws-sk" readonly value="******** (已保存)" class="w-full bg-black/20 text-gray-400 px-3 py-2 rounded-xl border border-white/10 text-sm">
+          </div>
+        </div>
+        <div>
+          <label class="text-gray-500 text-xs block mb-1">SOCKS5 URL</label>
+          <div class="flex gap-2">
+            <input type="text" id="edit-aws-socks" placeholder="socks5://user:pass@host:port（留空清除）" class="flex-1 bg-black/30 text-white px-3 py-2 rounded-xl border border-white/10 text-sm">
+            <button type="button" id="btn-test-edit-socks-proxy" class="glass text-gray-300 hover:text-white px-4 py-2 rounded-xl text-sm transition">验证</button>
+          </div>
+          <p id="edit-aws-socks-test" class="text-[11px] text-gray-500 mt-1"></p>
+        </div>
+        <div class="flex gap-2 pt-1">
+          <button type="button" id="btn-save-aws-edit" class="flex-1 bg-rose-600 hover:bg-rose-500 text-white py-2 rounded-xl text-sm transition">保存修改</button>
+          <button type="button" id="btn-close-aws-edit-modal" class="flex-1 glass text-gray-300 hover:text-white py-2 rounded-xl text-sm transition">取消</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 绑定弹窗 -->
+  <div id="aws-bind-modal" class="hidden fixed inset-0 z-50 flex items-center justify-center bg-black/60">
+    <div class="glass rounded-2xl p-6 w-96">
+      <h3 class="text-white text-sm font-medium mb-4">绑定 AWS 实例</h3>
+      <input type="hidden" id="bind-node-id">
+      <div class="space-y-3">
+        <div>
+          <label class="text-gray-500 text-xs block mb-1">AWS 账号</label>
+          <select id="bind-account-id" class="w-full bg-black/30 text-white px-3 py-2 rounded-xl border border-white/10 text-sm"></select>
+        </div>
+        <div>
+          <label class="text-gray-500 text-xs block mb-1">实例类型</label>
+          <select id="bind-type" class="w-full bg-black/30 text-white px-3 py-2 rounded-xl border border-white/10 text-sm">
+            <option value="ec2">EC2</option>
+            <option value="lightsail">Lightsail</option>
+          </select>
+        </div>
+        <div>
+          <label class="text-gray-500 text-xs block mb-1">实例 ID / 名称</label>
+          <input type="text" id="bind-instance-id" placeholder="i-0abc123... 或 Lightsail 实例名" class="w-full bg-black/30 text-white px-3 py-2 rounded-xl border border-white/10 text-sm">
+        </div>
+        <div>
+          <label class="text-gray-500 text-xs block mb-1">区域</label>
+          <select id="bind-region" class="w-full bg-black/30 text-white px-3 py-2 rounded-xl border border-white/10 text-sm">
+            <option value="">默认区域</option>
+            <optgroup label="美洲">
+              <option value="us-east-1">us-east-1 (弗吉尼亚)</option>
+              <option value="us-east-2">us-east-2 (俄亥俄)</option>
+              <option value="us-west-1">us-west-1 (北加州)</option>
+              <option value="us-west-2">us-west-2 (俄勒冈)</option>
+              <option value="ca-central-1">ca-central-1 (加拿大中部)</option>
+              <option value="ca-west-1">ca-west-1 (加拿大西部)</option>
+              <option value="mx-central-1">mx-central-1 (墨西哥)</option>
+              <option value="sa-east-1">sa-east-1 (圣保罗)</option>
+            </optgroup>
+            <optgroup label="亚太">
+              <option value="ap-east-1">ap-east-1 (香港)</option>
+              <option value="ap-east-2">ap-east-2 (台北)</option>
+              <option value="ap-northeast-1">ap-northeast-1 (东京)</option>
+              <option value="ap-northeast-2">ap-northeast-2 (首尔)</option>
+              <option value="ap-northeast-3">ap-northeast-3 (大阪)</option>
+              <option value="ap-southeast-1">ap-southeast-1 (新加坡)</option>
+              <option value="ap-southeast-2">ap-southeast-2 (悉尼)</option>
+              <option value="ap-southeast-3">ap-southeast-3 (雅加达)</option>
+              <option value="ap-southeast-4">ap-southeast-4 (墨尔本)</option>
+              <option value="ap-southeast-5">ap-southeast-5 (吉隆坡)</option>
+              <option value="ap-southeast-7">ap-southeast-7 (曼谷)</option>
+              <option value="ap-south-1">ap-south-1 (孟买)</option>
+              <option value="ap-south-2">ap-south-2 (海得拉巴)</option>
+            </optgroup>
+            <optgroup label="欧洲">
+              <option value="eu-west-1">eu-west-1 (爱尔兰)</option>
+              <option value="eu-west-2">eu-west-2 (伦敦)</option>
+              <option value="eu-west-3">eu-west-3 (巴黎)</option>
+              <option value="eu-central-1">eu-central-1 (法兰克福)</option>
+              <option value="eu-central-2">eu-central-2 (苏黎世)</option>
+              <option value="eu-north-1">eu-north-1 (斯德哥尔摩)</option>
+              <option value="eu-south-1">eu-south-1 (米兰)</option>
+              <option value="eu-south-2">eu-south-2 (西班牙)</option>
+            </optgroup>
+            <optgroup label="中东与非洲">
+              <option value="me-south-1">me-south-1 (巴林)</option>
+              <option value="me-central-1">me-central-1 (阿联酋)</option>
+              <option value="il-central-1">il-central-1 (以色列)</option>
+              <option value="af-south-1">af-south-1 (开普敦)</option>
+            </optgroup>
+          </select>
+        </div>
+        <div class="flex gap-2">
+          <button type="button" id="btn-confirm-bind-aws" class="flex-1 bg-rose-600 hover:bg-rose-500 text-white py-2 rounded-xl text-sm transition">确认绑定</button>
+          <button type="button" id="btn-cancel-bind-aws" class="flex-1 glass text-gray-300 hover:text-white py-2 rounded-xl text-sm transition">取消</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<script nonce="<%= nonce %>">
+(() => {
+  document.querySelectorAll('.js-log-type-btn[data-logtype]').forEach((btn) => {
+    btn.addEventListener('click', () => switchLogType(btn.dataset.logtype));
+  });
+  document.getElementById('btn-clear-logs')?.addEventListener('click', () => clearLogs());
+  document.getElementById('security-view-substats')?.addEventListener('click', () => window.switchSecurityView && window.switchSecurityView('substats'));
+  document.getElementById('security-view-multinode')?.addEventListener('click', () => window.switchSecurityView && window.switchSecurityView('multiNode'));
+  document.getElementById('btn-load-substats')?.addEventListener('click', () => window.loadSubStats && window.loadSubStats(1));
+  document.getElementById('btn-load-multinode')?.addEventListener('click', () => window.loadMultiNodeObservations && window.loadMultiNodeObservations(1));
+
+  // 风控配置
+  (async function loadGuardConfig() {
+    try {
+      const res = await fetch('/admin/api/guard-config', { headers: { 'X-CSRF-Token': window._csrf || '' } });
+      const d = await res.json();
+      if (!d.ok) return;
+      const c = d.config;
+      const el = id => document.getElementById(id);
+      el('guard-mode').value = c.guard_mode || 'off';
+      el('guard-token-window').value = Math.round((parseInt(c.guard_token_window_ms) || 60000) / 1000);
+      el('guard-token-max-req').value = parseInt(c.guard_token_max_req) || 20;
+      el('guard-token-ban').value = Math.round((parseInt(c.guard_token_ban_ms) || 900000) / 1000);
+      el('guard-behavior-window').value = Math.round((parseInt(c.guard_behavior_window_ms) || 120000) / 1000);
+      el('guard-max-ips').value = parseInt(c.guard_behavior_max_ips) || 6;
+      el('guard-max-uas').value = parseInt(c.guard_behavior_max_uas) || 4;
+      el('guard-auto-reset-ua-24h-limit').value = parseInt(c.guard_auto_reset_ua_24h_limit) || 0;
+      el('guard-ua-allowlist').value = c.guard_ua_allowlist || '';
+    } catch (_) {}
+  })();
+  document.getElementById('btn-save-guard')?.addEventListener('click', async () => {
+    const el = id => document.getElementById(id);
+    const config = {
+      guard_mode: el('guard-mode').value,
+      guard_token_window_ms: String((parseInt(el('guard-token-window').value) || 60) * 1000),
+      guard_token_max_req: el('guard-token-max-req').value,
+      guard_token_ban_ms: String((parseInt(el('guard-token-ban').value) || 900) * 1000),
+      guard_behavior_window_ms: String((parseInt(el('guard-behavior-window').value) || 120) * 1000),
+      guard_behavior_max_ips: el('guard-max-ips').value,
+      guard_behavior_max_uas: el('guard-max-uas').value,
+      guard_auto_reset_ua_24h_limit: el('guard-auto-reset-ua-24h-limit').value,
+      guard_ua_allowlist: el('guard-ua-allowlist').value,
+    };
+    const res = await fetch('/admin/api/guard-config', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': window._csrf || '' }, body: JSON.stringify({ config }) });
+    const d = await res.json().catch(() => ({}));
+    showToast(d.ok ? '✅ 风控配置已保存' : '❌ 保存失败');
+  });
+
+  document.getElementById('btn-save-tg')?.addEventListener('click', () => saveTG());
+  document.getElementById('btn-test-tg')?.addEventListener('click', () => testTG());
+  document.getElementById('btn-save-smtp')?.addEventListener('click', () => saveSmtpConfig());
+  document.getElementById('btn-test-smtp')?.addEventListener('click', () => testSmtp());
+  document.querySelectorAll('.tg-event[data-key]').forEach((input) => {
+    input.addEventListener('change', () => toggleEvent(input));
+  });
+
+  document.getElementById('btn-save-announcement')?.addEventListener('click', () => saveAnnouncement());
+  document.getElementById('registration-open-toggle')?.addEventListener('change', async (e) => {
+    const open = e.target.checked;
+    const res = await fetch('/admin/api/registration-open', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': window._csrf || '' }, body: JSON.stringify({ open }) });
+    if (res.ok) showToast(open ? '✅ 已开放注册' : '✅ 已关闭注册');
+    else { e.target.checked = !open; showToast('❌ 操作失败'); }
+  });
+  document.getElementById('auto-delete-unbound-toggle')?.addEventListener('change', async (e) => {
+    const open = e.target.checked;
+    const res = await fetch('/admin/api/auto-delete-unbound-tg', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': window._csrf || '' }, body: JSON.stringify({ open }) });
+    if (res.ok) showToast(open ? '✅ 已开启未绑定自动删除' : '✅ 已关闭未绑定自动删除');
+    else { e.target.checked = !open; showToast('❌ 操作失败'); }
+  });
+  document.getElementById('nodeloc-registration-open-toggle')?.addEventListener('change', async (e) => {
+    const open = e.target.checked;
+    const res = await fetch('/admin/api/nodeloc-registration-open', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': window._csrf || '' }, body: JSON.stringify({ open }) });
+    if (res.ok) showToast(open ? '✅ 已开放 NodeLoc 注册' : '✅ 已关闭 NodeLoc 注册');
+    else { e.target.checked = !open; showToast('❌ 操作失败'); }
+  });
+  document.getElementById('nodeloc-login-open-toggle')?.addEventListener('change', async (e) => {
+    const open = e.target.checked;
+    const res = await fetch('/admin/api/nodeloc-login-open', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': window._csrf || '' }, body: JSON.stringify({ open }) });
+    if (res.ok) showToast(open ? '✅ 已启用 NodeLoc 登录' : '✅ 已隐藏 NodeLoc 登录');
+    else { e.target.checked = !open; showToast('❌ 操作失败'); }
+  });
+  document.getElementById('invite-registration-open-toggle')?.addEventListener('change', async (e) => {
+    const open = e.target.checked;
+    const res = await fetch('/admin/api/invite-registration-open', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': window._csrf || '' }, body: JSON.stringify({ open }) });
+    if (res.ok) showToast(open ? '✅ 已开放邀请码注册' : '✅ 已关闭邀请码注册');
+    else { e.target.checked = !open; showToast('❌ 操作失败'); }
+  });
+  document.getElementById('btn-save-email-domains')?.addEventListener('click', async () => {
+    const domains = document.getElementById('allowed-email-domains')?.value?.trim() || '';
+    const res = await fetch('/admin/api/allowed-email-domains', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': window._csrf || '' }, body: JSON.stringify({ domains }) });
+    showToast(res.ok ? '✅ 已保存' : '❌ 保存失败');
+  });
+  // 用户组重置周期
+  const _grpNames = ['普通用户','VIP 🌿','SVIP 👑','SSVIP 💎'];
+  async function loadGroupResetConfig() {
+    const res = await fetch('/admin/api/group-reset-config', { headers: { 'X-CSRF-Token': window._csrf || '' } });
+    const d = await res.json().catch(() => ({}));
+    if (!d.ok) return;
+    const container = document.getElementById('group-reset-config');
+    container.querySelectorAll('.js-grp-row').forEach(e => e.remove());
+    d.groups.forEach(g => {
+      const frag = document.createDocumentFragment();
+      const label = document.createElement('span');
+      label.className = 'text-xs text-gray-300 js-grp-row';
+      label.textContent = _grpNames[g.level];
+      const mkInput = (field, val) => { const el = document.createElement('input'); el.type='number'; el.min='0'; el.max='365'; el.value=val; el.dataset.level=g.level; el.dataset.field=field; el.className='bg-black/30 text-white px-3 py-1.5 rounded-xl border border-white/10 text-sm js-grp-input js-grp-row'; return el; };
+      frag.appendChild(label);
+      frag.appendChild(mkInput('uuid', g.uuid_days));
+      frag.appendChild(mkInput('sub', g.sub_days));
+      container.appendChild(frag);
+    });
+    const portEl = document.getElementById('port-rotate-days');
+    if (portEl && d.port_rotate_days !== undefined) portEl.value = d.port_rotate_days;
+  }
+  loadGroupResetConfig();
+  document.getElementById('btn-save-group-reset')?.addEventListener('click', async () => {
+    const inputs = document.querySelectorAll('.js-grp-input');
+    const groups = [{},{},{},{}];
+    inputs.forEach(el => {
+      const l = parseInt(el.dataset.level);
+      if (el.dataset.field === 'uuid') groups[l].uuid_days = parseInt(el.value) || 0;
+      else groups[l].sub_days = parseInt(el.value) || 0;
+    });
+    const port_rotate_days = parseInt(document.getElementById('port-rotate-days')?.value) || 0;
+    const res = await fetch('/admin/api/group-reset-config', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': window._csrf || '' }, body: JSON.stringify({ groups, port_rotate_days }) });
+    const d = await res.json().catch(() => ({}));
+    showToast(d.ok ? '✅ 已保存' : '❌ 保存失败');
+  });
+
+  document.getElementById('btn-save-default-traffic-limit')?.addEventListener('click', () => saveDefaultTrafficLimit());
+  document.getElementById('btn-apply-default-traffic-limit')?.addEventListener('click', () => applyDefaultTrafficLimit());
+  document.getElementById('btn-save-default-user-group')?.addEventListener('click', () => saveDefaultUserGroup());
+
+  document.getElementById('btn-save-sub-visibility')?.addEventListener('click', async () => {
+    const vless = document.getElementById('sub-visible-vless')?.checked;
+    const ss = document.getElementById('sub-visible-ss')?.checked;
+    const hy2 = document.getElementById('sub-visible-hy2')?.checked;
+    const res = await fetch('/admin/api/sub-visibility', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': window._csrf || '' }, body: JSON.stringify({ vless, ss, hy2 }) });
+    showToast(res.ok ? '✅ 订阅可见性已保存' : '❌ 保存失败');
+  });
+
+  document.getElementById('btn-load-all-instances')?.addEventListener('click', () => loadAllInstances(true));
+
+  // ─── AWS 区域筛选 ───
+  let _awsRegionsData = null;
+  async function loadAwsRegions() {
+    const container = document.getElementById('aws-regions-list');
+    if (!container) return;
+    try {
+      const res = await fetch('/admin/api/aws/regions', { credentials: 'same-origin' });
+      const d = await res.json();
+      _awsRegionsData = d;
+      renderAwsRegions(d);
+    } catch (e) {
+      container.innerHTML = '<span class="text-red-400">加载失败</span>';
+    }
+  }
+  function renderAwsRegions(d) {
+    const container = document.getElementById('aws-regions-list');
+    const enabledSet = new Set(d.enabled);
+    // 按分组组织
+    const groups = {};
+    for (const region of d.all) {
+      const meta = d.meta[region] || { group: '其他', name: region };
+      if (!groups[meta.group]) groups[meta.group] = [];
+      groups[meta.group].push({ region, name: meta.name });
+    }
+    const groupOrder = ['美洲', '欧洲', '亚太', '中东与非洲', '其他'];
+    const sortedGroups = Object.keys(groups).sort((a, b) => groupOrder.indexOf(a) - groupOrder.indexOf(b));
+    let html = '';
+    for (const g of sortedGroups) {
+      html += `<div class="mb-4 last:mb-0">
+        <h4 class="text-gray-400 text-xs font-medium mb-2 uppercase tracking-wider">${g}</h4>
+        <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">`;
+      for (const item of groups[g]) {
+        const checked = enabledSet.has(item.region) ? 'checked' : '';
+        const meta = d.meta[item.region] || {};
+        const lsBadge = meta.lightsail
+          ? '<span class="text-[9px] px-1 py-0.5 rounded bg-cyan-500/15 text-cyan-300 border border-cyan-500/20">EC2+LS</span>'
+          : '<span class="text-[9px] px-1 py-0.5 rounded bg-gray-500/15 text-gray-500 border border-gray-500/20">仅 EC2</span>';
+        html += `<label class="flex items-center justify-between p-2.5 rounded-xl bg-black/20 cursor-pointer hover:bg-white/5 transition">
+          <div class="flex flex-col text-left min-w-0 flex-1">
+            <div class="flex items-center gap-1.5 flex-wrap">
+              <span class="text-white text-xs truncate">${item.name}</span>
+              ${lsBadge}
+            </div>
+            <span class="text-gray-600 text-[10px] font-mono">${item.region}</span>
+          </div>
+          <div class="relative shrink-0 ml-2">
+            <input type="checkbox" data-region="${item.region}" class="js-aws-region-toggle sr-only peer" ${checked}>
+            <div class="w-9 h-5 bg-gray-600 rounded-full peer-checked:bg-rose-500 transition-colors"></div>
+            <div class="absolute left-0.5 top-0.5 w-4 h-4 bg-white rounded-full transition-transform peer-checked:translate-x-4"></div>
+          </div>
+        </label>`;
+      }
+      html += '</div></div>';
+    }
+    container.innerHTML = html;
+    container.classList.remove('text-center', 'py-6');
+    updateAwsRegionsCount();
+  }
+  function updateAwsRegionsCount() {
+    const all = document.querySelectorAll('.js-aws-region-toggle');
+    const checked = document.querySelectorAll('.js-aws-region-toggle:checked');
+    const btnSave = document.getElementById('btn-aws-regions-save');
+    if (btnSave) btnSave.textContent = `保存 (${checked.length}/${all.length})`;
+  }
+  document.addEventListener('change', (e) => {
+    if (e.target?.classList?.contains('js-aws-region-toggle')) updateAwsRegionsCount();
+  });
+  document.getElementById('btn-aws-regions-all')?.addEventListener('click', () => {
+    document.querySelectorAll('.js-aws-region-toggle').forEach(c => { c.checked = true; });
+    updateAwsRegionsCount();
+  });
+  document.getElementById('btn-aws-regions-none')?.addEventListener('click', () => {
+    document.querySelectorAll('.js-aws-region-toggle').forEach(c => { c.checked = false; });
+    updateAwsRegionsCount();
+  });
+  document.getElementById('btn-aws-regions-save')?.addEventListener('click', async () => {
+    const regions = Array.from(document.querySelectorAll('.js-aws-region-toggle:checked')).map(c => c.dataset.region);
+    const btn = document.getElementById('btn-aws-regions-save');
+    btn.disabled = true;
+    try {
+      const res = await fetch('/admin/api/aws/regions', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': window._csrf || '' },
+        body: JSON.stringify({ regions }),
+      });
+      const d = await res.json();
+      if (d.ok) showToast(`✅ 已保存 ${d.count} 个启用区域`);
+      else showToast('❌ ' + (d.error || '保存失败'));
+    } catch { showToast('❌ 网络错误'); }
+    btn.disabled = false;
+    updateAwsRegionsCount();
+  });
+  // 切换到 AWS Tab 时加载（也支持页面初次直接进入 AWS Tab）
+  // 监听点击和键盘切换两种入口
+  document.querySelectorAll('.tab-btn[data-tab="aws"]').forEach(b => b.addEventListener('click', () => {
+    if (!_awsRegionsData) loadAwsRegions();
+  }));
+  // hash 直接定位到 #aws，或包装 switchTab 钩子
+  if (typeof window.switchTab === 'function') {
+    const _origSwitch = window.switchTab;
+    window.switchTab = function (name) {
+      _origSwitch(name);
+      if (name === 'aws' && !_awsRegionsData) loadAwsRegions();
+    };
+  }
+  // 进入页面时直接加载（即便不在 aws tab 也无副作用，只是预先填好数据）
+  loadAwsRegions();
+  document.getElementById('btn-auto-bind-aws')?.addEventListener('click', async () => {
+    const btn = document.getElementById('btn-auto-bind-aws');
+    btn.disabled = true; btn.textContent = '⏳ 匹配中...';
+    try {
+      const res = await fetch('/admin/api/aws/auto-bind', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': window._csrf || '' } });
+      const d = await res.json();
+      if (d.ok) {
+        showToast(d.bound ? `✅ 已自动绑定 ${d.bound} 个节点` : '没有找到可匹配的未绑定节点');
+        if (d.bound) loadAllInstances(true);
+      } else showToast('❌ ' + (d.error || '绑定失败'));
+    } catch { showToast('❌ 网络错误'); }
+    btn.disabled = false; btn.textContent = '🔗 智能绑定';
+  });
+  document.getElementById('btn-test-socks-proxy')?.addEventListener('click', () => testSocksProxy());
+  document.getElementById('btn-save-aws-config')?.addEventListener('click', () => saveAwsConfig());
+
+  document.querySelectorAll('.js-swap-node-ip').forEach((btn) => {
+    btn.addEventListener('click', () => swapNodeIp(Number(btn.dataset.nodeId || 0), btn.dataset.nodeName || ''));
+  });
+  document.querySelectorAll('.js-unbind-aws').forEach((btn) => {
+    btn.addEventListener('click', () => unbindAws(Number(btn.dataset.nodeId || 0)));
+  });
+  document.querySelectorAll('.js-show-bind-aws').forEach((btn) => {
+    btn.addEventListener('click', () => showBindAws(Number(btn.dataset.nodeId || 0)));
+  });
+
+  const awsEditModal = document.getElementById('aws-edit-modal');
+  if (awsEditModal) {
+    awsEditModal.addEventListener('click', (e) => {
+      if (e.target === awsEditModal) closeAwsEditModal();
+    });
+  }
+  document.getElementById('btn-test-edit-socks-proxy')?.addEventListener('click', () => testSocksProxyInput('edit-aws-socks', 'edit-aws-socks-test'));
+  document.getElementById('btn-save-aws-edit')?.addEventListener('click', () => saveAwsEdit());
+  document.getElementById('btn-close-aws-edit-modal')?.addEventListener('click', () => closeAwsEditModal());
+
+  document.getElementById('btn-confirm-bind-aws')?.addEventListener('click', () => confirmBindAws());
+  document.getElementById('btn-cancel-bind-aws')?.addEventListener('click', () => {
+    document.getElementById('aws-bind-modal')?.classList.add('hidden');
+  });
+
+  // ─── 自动化运维配置 ───
+  function updateFreezeOptionsVisibility() {
+    const trafficEnabled = document.getElementById('auto-freeze-traffic-enabled')?.checked;
+    const trafficOpts = document.getElementById('traffic-freeze-options');
+    if (trafficOpts) trafficOpts.style.opacity = trafficEnabled ? '1' : '0.4';
+
+    const noCheckinEnabled = document.getElementById('auto-freeze-no-checkin-enabled')?.checked;
+    const noCheckinOpts = document.getElementById('no-checkin-freeze-options');
+    if (noCheckinOpts) noCheckinOpts.style.opacity = noCheckinEnabled ? '1' : '0.4';
+
+    const alertEnabled = document.getElementById('traffic-alert-enabled')?.checked;
+    const alertOpts = document.getElementById('traffic-alert-options');
+    if (alertOpts) alertOpts.style.opacity = alertEnabled ? '1' : '0.4';
+  }
+
+  document.getElementById('auto-freeze-traffic-enabled')?.addEventListener('change', updateFreezeOptionsVisibility);
+  document.getElementById('auto-freeze-no-checkin-enabled')?.addEventListener('change', updateFreezeOptionsVisibility);
+  document.getElementById('traffic-alert-enabled')?.addEventListener('change', updateFreezeOptionsVisibility);
+
+  async function loadAutomationConfig() {
+    try {
+      const res = await fetch('/admin/api/automation-config', { credentials: 'same-origin' });
+      const cfg = await res.json();
+
+      // 流量超标开关
+      const trafficToggle = document.getElementById('auto-freeze-traffic-enabled');
+      if (trafficToggle) trafficToggle.checked = cfg.auto_freeze_traffic_enabled === 'true';
+
+      // 流量策略
+      const actionSel = document.getElementById('traffic-exceed-action');
+      if (actionSel && cfg.traffic_exceed_action) actionSel.value = cfg.traffic_exceed_action;
+      const threshEl = document.getElementById('traffic-exceed-threshold-gb');
+      if (threshEl && cfg.traffic_exceed_threshold_gb) threshEl.value = cfg.traffic_exceed_threshold_gb;
+      const hardEl = document.getElementById('traffic-exceed-hard-limit-gb');
+      if (hardEl && cfg.traffic_exceed_hard_limit_gb) hardEl.value = cfg.traffic_exceed_hard_limit_gb;
+
+      // 未签到冻结开关 + 天数
+      const noCheckinToggle = document.getElementById('auto-freeze-no-checkin-enabled');
+      if (noCheckinToggle) noCheckinToggle.checked = cfg.auto_freeze_no_checkin_enabled === 'true';
+      const daysEl = document.getElementById('auto-freeze-no-checkin-days');
+      if (daysEl && cfg.auto_freeze_no_checkin_days) daysEl.value = cfg.auto_freeze_no_checkin_days;
+
+      // 用户流量预警
+      const alertToggle = document.getElementById('traffic-alert-enabled');
+      if (alertToggle) alertToggle.checked = cfg.traffic_alert_enabled === 'true';
+      const alertGbEl = document.getElementById('traffic-alert-threshold-gb');
+      if (alertGbEl && cfg.traffic_alert_threshold_gb) alertGbEl.value = cfg.traffic_alert_threshold_gb;
+
+      updateFreezeOptionsVisibility();
+    } catch (e) { console.error('加载自动化配置失败', e); }
+  }
+
+  document.getElementById('btn-save-automation')?.addEventListener('click', async () => {
+    const btn = document.getElementById('btn-save-automation');
+    const restore = typeof btnLoading === 'function' ? btnLoading(btn, '保存中...') : null;
+    try {
+      const body = {
+        traffic_exceed_action: document.getElementById('traffic-exceed-action')?.value || 'notify',
+        traffic_exceed_threshold_gb: document.getElementById('traffic-exceed-threshold-gb')?.value || '20',
+        traffic_exceed_hard_limit_gb: document.getElementById('traffic-exceed-hard-limit-gb')?.value || '50',
+        auto_freeze_traffic_enabled: document.getElementById('auto-freeze-traffic-enabled')?.checked ? 'true' : 'false',
+        auto_freeze_no_checkin_enabled: document.getElementById('auto-freeze-no-checkin-enabled')?.checked ? 'true' : 'false',
+        auto_freeze_no_checkin_days: document.getElementById('auto-freeze-no-checkin-days')?.value || '30',
+        traffic_alert_enabled: document.getElementById('traffic-alert-enabled')?.checked ? 'true' : 'false',
+        traffic_alert_threshold_gb: document.getElementById('traffic-alert-threshold-gb')?.value || '100',
+      };
+      const res = await fetch('/admin/api/automation-config', {
+        method: 'POST', credentials: 'same-origin',
+        headers: { 'Content-Type': 'application/json', 'x-csrf-token': window._csrf || '' },
+        body: JSON.stringify(body),
+      });
+      const data = await res.json();
+      if (data.ok) toast('自动化配置已保存', 2000);
+      else toast('保存失败: ' + (data.error || ''), 3000, 'error');
+    } catch (e) { toast('保存失败: ' + e.message, 3000, 'error'); }
+    finally { if (restore) restore(); }
+  });
+
+  document.getElementById('btn-agent-update-all')?.addEventListener('click', async () => {
+    const btn = document.getElementById('btn-agent-update-all');
+    const resultDiv = document.getElementById('agent-update-result');
+    const ok = await _confirm('确认要批量更新所有在线 Agent 吗？\n\nAgent 将下载最新代码并自动重启。');
+    if (!ok) return;
+    const restore = typeof btnLoading === 'function' ? btnLoading(btn, '更新中...') : null;
+    try {
+      const res = await fetch('/admin/api/agents/update-all', {
+        method: 'POST', credentials: 'same-origin',
+        headers: { 'Content-Type': 'application/json', 'x-csrf-token': window._csrf || '' },
+      });
+      const data = await res.json();
+      if (resultDiv) {
+        resultDiv.classList.remove('hidden');
+        if (data.total === 0) {
+          resultDiv.textContent = '当前没有在线 Agent';
+        } else {
+          resultDiv.innerHTML = '';
+          const header = document.createElement('div');
+          header.className = 'mb-1 text-gray-300';
+          header.textContent = `更新完成: ${data.successCount || 0}/${data.total} 成功`;
+          resultDiv.appendChild(header);
+          for (const r of (data.results || [])) {
+            const span = document.createElement('span');
+            span.className = r.success ? 'text-emerald-400' : 'text-red-400';
+            span.textContent = `${r.success ? '✅' : '❌'} ${r.nodeName || r.nodeId}${r.error ? ': ' + r.error : ''}`;
+            resultDiv.appendChild(span);
+            resultDiv.appendChild(document.createElement('br'));
+          }
+        }
+      }
+      toast(`Agent 更新: ${data.successCount || 0}/${data.total || 0} 成功`, 3000);
+    } catch (e) { toast('更新失败: ' + e.message, 3000, 'error'); }
+    finally { if (restore) restore(); }
+  });
+
+  // 暴露给 core.js tab 切换时调用
+  window.loadAutomationConfig = loadAutomationConfig;
+})();
+</script>
+
+<!-- 用户详情弹窗 -->
+<div id="user-detail-modal" class="hidden fixed inset-0 z-50 flex items-center justify-center bg-black/60" style="backdrop-filter:blur(4px)">
+  <div class="glass rounded-2xl mx-4 overflow-hidden" style="width:100%;max-width:640px">
+    <div class="flex items-center justify-between p-4 border-b border-white/5">
+      <h3 class="text-white text-sm font-medium" id="ud-title">👤 用户详情</h3>
+      <button id="ud-close" class="text-gray-500 hover:text-white text-sm">✕</button>
+    </div>
+    <div class="overflow-y-auto max-h-[480px] p-4" id="ud-body">
+      <p class="text-gray-500 text-sm text-center py-6">加载中...</p>
+    </div>
+  </div>
+</div>
+<script nonce="<%= nonce %>">
+(function(){
+  const modal = document.getElementById('user-detail-modal');
+  const body = document.getElementById('ud-body');
+  const title = document.getElementById('ud-title');
+  document.getElementById('ud-close').onclick = () => modal.classList.add('hidden');
+  modal.onclick = e => { if (e.target === modal) modal.classList.add('hidden'); };
+
+  function fmtB(b) {
+    if (!b || b <= 0) return '0';
+    if (b >= 1073741824) return (b/1073741824).toFixed(2)+' GB';
+    if (b >= 1048576) return (b/1048576).toFixed(1)+' MB';
+    return (b/1024).toFixed(0)+' KB';
+  }
+
+  function esc(v) {
+    if (v == null) return '';
+    return String(v)
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#39;');
+  }
+
+  document.addEventListener('click', async e => {
+    const el = e.target.closest('.js-user-detail');
+    if (!el) return;
+    const uid = el.dataset.userId;
+    modal.classList.remove('hidden');
+    body.innerHTML = '<p class="text-gray-500 text-sm text-center py-8">加载中...</p>';
+    title.textContent = '用户详情';
+
+    try {
+      const r = await fetch('/admin/api/users/' + uid + '/detail');
+      const d = await r.json();
+      if (d.error) { body.innerHTML = '<p class="text-red-400 text-sm text-center">' + d.error + '</p>'; return; }
+
+      const i = d.info;
+      title.textContent = i.username;
+
+      // 流量来源分析
+      let trafficSrc = '';
+      if (d.dailyTraffic && d.dailyTraffic.length) {
+        trafficSrc = d.dailyTraffic.map(t =>
+          '<div class="flex justify-between text-xs"><span class="text-gray-500">' + t.date + '</span><span class="text-gray-300">↑' + fmtB(t.up) + ' ↓' + fmtB(t.down) + '</span></div>'
+        ).join('');
+      } else {
+        trafficSrc = '<p class="text-gray-600 text-xs">暂无流量记录</p>';
+      }
+
+      // 订阅拉取
+      let subInfo = '';
+      if (d.subAccess && d.subAccess.ips && d.subAccess.ips.length) {
+        subInfo = d.subAccess.ips.slice(0, 10).map(s =>
+          '<div class="flex justify-between text-xs"><span class="text-gray-500">' + s.ip + ' <span class="text-gray-600">×' + s.count + '</span></span><span class="text-gray-600">' + (s.last_access_display||'') + '</span></div>'
+        ).join('');
+      } else {
+        subInfo = '<p class="text-gray-600 text-xs">24h 内无拉取记录</p>';
+      }
+
+      // UA
+      let uaInfo = '';
+      if (d.subAccess && d.subAccess.uas && d.subAccess.uas.length) {
+        uaInfo = d.subAccess.uas.slice(0, 5).map(u =>
+          '<div class="text-xs text-gray-500 truncate">' + (u.ua||'').slice(0,60) + ' <span class="text-gray-600">×' + u.count + '</span></div>'
+        ).join('');
+      }
+
+      // 风险事件
+      let riskInfo = '';
+      if (d.risk && d.risk.multiNodeEvents && d.risk.multiNodeEvents.length) {
+        riskInfo = '<div class="mt-1 space-y-1">' + d.risk.multiNodeEvents.slice(0, 5).map(r =>
+          '<div class="text-xs text-orange-300">' + (r.time_display||'') + ' <span class="text-gray-300">' + (r.detail||'').slice(0,80) + '</span></div>'
+        ).join('') + '</div>';
+      } else {
+        riskInfo = '<p class="text-gray-400 text-xs">无异常</p>';
+      }
+
+      // 流量来源
+      const ts = d.trafficSources || {};
+      const other = Math.max(0, (i.traffic_limit||0) - (ts.default||0) - (ts.checkin||0) - (ts.lucky||0));
+      const srcItems = [
+        {label:'📦 注册赠送', val: ts.default||0},
+        {label:'📌 签到', val: ts.checkin||0},
+        {label:'🎰 抽奖', val: ts.lucky||0},
+        {label:'🎮 其他(猜拳等)', val: other},
+      ].filter(s => s.val > 0);
+      const srcHtml = srcItems.length ? srcItems.map(s =>
+        '<div class="flex justify-between text-xs"><span class="text-gray-400">' + s.label + '</span><span class="text-gray-300">' + fmtB(s.val) + '</span></div>'
+      ).join('') : '<p class="text-gray-400 text-xs">无记录</p>';
+
+      const status = i.is_frozen ? '❄️ 冻结' : i.is_blocked ? '🚫 封禁' : '✅ 正常';
+      const invitedBy = i.invited_by
+        ? `${esc(i.invited_by.inviter_username || '-')}${i.invited_by.inviter_email ? ' <span class="text-gray-500">(' + esc(i.invited_by.inviter_email) + ')</span>' : ''} <span class="text-gray-600">· 码 ' + esc(i.invited_by.code || '-') + '</span>`
+        : '<span class="text-gray-500">-</span>';
+
+      body.innerHTML = `
+        <table class="w-full text-xs text-left">
+          <tbody class="text-gray-300">
+            <tr class="border-b border-white/5"><td class="py-2 text-gray-500 w-20">ID</td><td class="py-2">${i.id}</td><td class="py-2 text-gray-500 w-20">状态</td><td class="py-2">${status}</td></tr>
+            <tr class="border-b border-white/5"><td class="py-2 text-gray-500">注册</td><td class="py-2 text-gray-400">${i.created_at_display||'-'}</td><td class="py-2 text-gray-500">活跃</td><td class="py-2 text-gray-400">${i.last_login_display||'-'}</td></tr>
+            <tr class="border-b border-white/5"><td class="py-2 text-gray-500">邀请人</td><td class="py-2 text-gray-300" colspan="3">${invitedBy}</td></tr>
+            <tr class="border-b border-white/5"><td class="py-2 text-gray-500">今日流量</td><td class="py-2">↑${fmtB(d.todayTraffic?.up)} ↓${fmtB(d.todayTraffic?.down)}</td><td class="py-2 text-gray-500">累计流量</td><td class="py-2">↑${fmtB(d.totalTraffic?.up)} ↓${fmtB(d.totalTraffic?.down)}</td></tr>
+            <tr class="border-b border-white/5"><td class="py-2 text-gray-500">限额</td><td class="py-2">${i.traffic_limit < 0 ? '∞' : fmtB(i.traffic_limit)}</td><td class="py-2 text-gray-500">到期</td><td class="py-2 text-gray-400">${i.expires_at_display||'永不过期'}</td></tr>
+          </tbody>
+        </table>
+        <div class="mt-3 space-y-2">
+          <details class="glass rounded-xl"><summary class="px-3 py-2 text-xs text-gray-400 cursor-pointer hover:text-white">📊 7天流量趋势</summary><div class="px-3 pb-2 space-y-0.5">${trafficSrc}</div></details>
+          <details class="glass rounded-xl" open><summary class="px-3 py-2 text-xs text-gray-400 cursor-pointer hover:text-white">💰 流量来源</summary><div class="px-3 pb-2 space-y-0.5">${srcHtml}</div></details>
+          <details class="glass rounded-xl"><summary class="px-3 py-2 text-xs text-gray-400 cursor-pointer hover:text-white">📡 订阅拉取 IP（24h）</summary><div class="px-3 pb-2 space-y-0.5">${subInfo}</div></details>
+          ${uaInfo ? '<details class="glass rounded-xl"><summary class="px-3 py-2 text-xs text-gray-400 cursor-pointer hover:text-white">📱 客户端 UA</summary><div class="px-3 pb-2 space-y-0.5">' + uaInfo + '</div></details>' : ''}
+          <details class="glass rounded-xl"><summary class="px-3 py-2 text-xs text-gray-400 cursor-pointer hover:text-white">⚠️ 风险事件</summary><div class="px-3 pb-2">${riskInfo}</div></details>
+        </div>
+      `;
+    } catch(e) {
+      body.innerHTML = '<p class="text-red-400 text-sm text-center">加载失败</p>';
+    }
+  });
+})();
+</script>

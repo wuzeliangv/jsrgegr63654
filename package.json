@@ -1,0 +1,47 @@
+{
+  "name": "dayizi-panel",
+  "version": "4.1.1",
+  "description": "",
+  "main": "src/app.js",
+  "scripts": {
+    "start": "node src/app.js",
+    "pm2": "pm2 start ecosystem.config.js",
+    "pm2:stop": "pm2 stop dayizi-panel",
+    "pm2:restart": "pm2 restart dayizi-panel",
+    "pm2:logs": "pm2 logs dayizi-panel",
+    "test": "node --test",
+    "build:css": "npx tailwindcss -o public/css/tailwind.min.css --minify"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "MIT",
+  "dependencies": {
+    "@aws-sdk/client-ec2": "^3.995.0",
+    "@aws-sdk/client-lightsail": "^3.995.0",
+    "@smithy/node-http-handler": "^4.4.5",
+    "better-sqlite3": "^12.6.2",
+    "better-sqlite3-session-store": "^0.1.0",
+    "dotenv": "^17.3.1",
+    "ejs": "^4.0.1",
+    "express": "^5.2.1",
+    "express-rate-limit": "^8.2.1",
+    "express-session": "^1.19.0",
+    "helmet": "^8.1.0",
+    "morgan": "^1.10.1",
+    "node-cron": "^4.2.1",
+    "node-ssh": "^13.2.1",
+    "node-telegram-bot-api": "^0.67.0",
+    "nodemailer": "^7.0.13",
+    "pino": "^10.3.1",
+    "qrcode": "^1.5.4",
+    "socks-proxy-agent": "^8.0.5",
+    "uuid": "^13.0.0",
+    "ws": "^8.19.0"
+  },
+  "devDependencies": {
+    "tailwindcss": "^3.4.19"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

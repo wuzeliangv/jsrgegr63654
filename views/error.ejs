@@ -1,0 +1,40 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <title><%= status %> · 大姨子的诱惑</title>
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🍑</text></svg>">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <style>
+    body {
+      margin: 0;
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: #0c0a0f;
+      color: #e5e7eb;
+      font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
+    }
+    .wrap { text-align: center; padding: 24px; }
+    h1 { margin: 0 0 8px; color: #fff; font-size: 28px; }
+    p { margin: 0 0 14px; color: #9ca3af; }
+    a { color: #fb7185; text-decoration: none; }
+    a:hover { text-decoration: underline; }
+    .icon { font-size: 64px; margin-bottom: 8px; }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <p class="icon">🍑</p>
+    <p class="icon"><%= status === 404 ? '🫥' : '💥' %></p>
+    <h1>
+      <%= status === 404 ? '页面不存在' : '服务器开小差了' %>
+    </h1>
+    <% if (status !== 404) { %>
+      <p><%= message || '请稍后再试' %></p>
+    <% } %>
+    <a href="/">返回首页</a>
+  </div>
+</body>
+</html>

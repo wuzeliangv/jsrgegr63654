@@ -1,0 +1,191 @@
+<!-- 运维仪表盘 Tab -->
+<div class="tab-panel space-y-4" data-tab="ops">
+
+  <!-- 节点健康总览 -->
+  <div class="glass rounded-2xl p-5">
+    <div class="flex items-center justify-between mb-4">
+      <h3 class="text-white text-sm font-medium">📊 节点健康总览</h3>
+      <button id="ops-refresh-btn" class="text-[11px] px-3 py-1 rounded-full bg-white/5 text-gray-400 hover:bg-white/10 transition">🔄 刷新</button>
+    </div>
+    <div class="grid grid-cols-2 md:grid-cols-4 gap-3" id="ops-health-cards">
+      <div class="rounded-xl bg-black/30 p-4 text-center border border-white/5">
+        <div class="text-3xl font-bold text-white" id="ops-total">-</div>
+        <div class="text-[11px] text-gray-500 mt-1">总节点</div>
+      </div>
+      <div class="rounded-xl bg-black/30 p-4 text-center border border-emerald-500/20">
+        <div class="text-3xl font-bold text-emerald-400" id="ops-online">-</div>
+        <div class="text-[11px] text-gray-500 mt-1">在线</div>
+      </div>
+      <div class="rounded-xl bg-black/30 p-4 text-center border border-yellow-500/20">
+        <div class="text-3xl font-bold text-yellow-400" id="ops-offline">-</div>
+        <div class="text-[11px] text-gray-500 mt-1">离线</div>
+      </div>
+      <div class="rounded-xl bg-black/30 p-4 text-center border border-red-500/20">
+        <div class="text-3xl font-bold text-red-400" id="ops-blocked">-</div>
+        <div class="text-[11px] text-gray-500 mt-1">疑似被墙</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 蜜桃酱巡检状态 -->
+  <div class="glass rounded-2xl p-5">
+    <h3 class="text-white text-sm font-medium mb-3">🍑 蜜桃酱巡检状态</h3>
+    <div class="grid grid-cols-2 md:grid-cols-4 gap-3">
+      <div class="rounded-xl bg-black/20 p-3 text-center">
+        <div class="text-lg font-bold text-blue-400" id="ops-last-patrol">-</div>
+        <div class="text-[10px] text-gray-500 mt-1">最近巡检</div>
+      </div>
+      <div class="rounded-xl bg-black/20 p-3 text-center">
+        <div class="text-lg font-bold text-cyan-400" id="ops-patrol-count">0</div>
+        <div class="text-[10px] text-gray-500 mt-1">今日巡检</div>
+      </div>
+      <div class="rounded-xl bg-black/20 p-3 text-center">
+        <div class="text-lg font-bold text-orange-400" id="ops-swap-count">0</div>
+        <div class="text-[10px] text-gray-500 mt-1">今日换IP</div>
+      </div>
+      <div class="rounded-xl bg-black/20 p-3 text-center">
+        <div class="text-lg font-bold text-green-400" id="ops-fix-count">0</div>
+        <div class="text-[10px] text-gray-500 mt-1">今日修复</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 运维配置 -->
+  <div class="glass rounded-2xl p-5">
+    <h3 class="text-white text-sm font-medium mb-4">⚙️ 运维配置</h3>
+    <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+      <div>
+        <label class="text-gray-500 text-xs block mb-1">目标节点数（0=不自动扩缩容）</label>
+        <input type="number" id="ops-target-nodes" min="0" class="w-full bg-black/30 text-white px-3 py-2 rounded-xl border border-white/10 text-sm" value="0">
+      </div>
+      <div>
+        <label class="text-gray-500 text-xs block mb-1">巡检间隔（分钟）</label>
+        <input type="number" id="ops-patrol-interval" min="5" class="w-full bg-black/30 text-white px-3 py-2 rounded-xl border border-white/10 text-sm" value="30">
+      </div>
+      <div>
+        <label class="text-gray-500 text-xs block mb-1">每日换 IP 上限</label>
+        <input type="number" id="ops-max-daily-swaps" min="0" class="w-full bg-black/30 text-white px-3 py-2 rounded-xl border border-white/10 text-sm" value="10">
+      </div>
+      <div>
+        <label class="text-gray-500 text-xs block mb-1">每日创建实例上限</label>
+        <input type="number" id="ops-max-daily-creates" min="0" class="w-full bg-black/30 text-white px-3 py-2 rounded-xl border border-white/10 text-sm" value="3">
+      </div>
+    </div>
+
+    <div class="mt-4 space-y-2">
+      <label class="flex items-center justify-between p-3 rounded-xl bg-black/20 cursor-pointer hover:bg-white/5 transition">
+        <div>
+          <span class="text-white text-sm">🔄 被墙自动换 IP</span>
+        </div>
+        <div class="relative flex-shrink-0">
+          <input type="checkbox" id="ops-auto-swap-ip" class="sr-only peer">
+          <div class="w-9 h-5 bg-gray-600 rounded-full peer-checked:bg-rose-500 transition-colors"></div>
+          <div class="absolute left-0.5 top-0.5 w-4 h-4 bg-white rounded-full transition-transform peer-checked:translate-x-4"></div>
+        </div>
+      </label>
+      <label class="flex items-center justify-between p-3 rounded-xl bg-black/20 cursor-pointer hover:bg-white/5 transition">
+        <div>
+          <span class="text-white text-sm">🔧 节点自动修复</span>
+        </div>
+        <div class="relative flex-shrink-0">
+          <input type="checkbox" id="ops-auto-repair" class="sr-only peer">
+          <div class="w-9 h-5 bg-gray-600 rounded-full peer-checked:bg-rose-500 transition-colors"></div>
+          <div class="absolute left-0.5 top-0.5 w-4 h-4 bg-white rounded-full transition-transform peer-checked:translate-x-4"></div>
+        </div>
+      </label>
+      <label class="flex items-center justify-between p-3 rounded-xl bg-black/20 cursor-pointer hover:bg-white/5 transition">
+        <div>
+          <span class="text-white text-sm">📈 自动扩缩容</span>
+        </div>
+        <div class="relative flex-shrink-0">
+          <input type="checkbox" id="ops-auto-scale" class="sr-only peer">
+          <div class="w-9 h-5 bg-gray-600 rounded-full peer-checked:bg-rose-500 transition-colors"></div>
+          <div class="absolute left-0.5 top-0.5 w-4 h-4 bg-white rounded-full transition-transform peer-checked:translate-x-4"></div>
+        </div>
+      </label>
+      <label class="flex items-center justify-between p-3 rounded-xl bg-black/20 cursor-pointer hover:bg-white/5 transition">
+        <div>
+          <span class="text-white text-sm">🛡️ 面板守护</span>
+        </div>
+        <div class="relative flex-shrink-0">
+          <input type="checkbox" id="ops-panel-guard" class="sr-only peer">
+          <div class="w-9 h-5 bg-gray-600 rounded-full peer-checked:bg-rose-500 transition-colors"></div>
+          <div class="absolute left-0.5 top-0.5 w-4 h-4 bg-white rounded-full transition-transform peer-checked:translate-x-4"></div>
+        </div>
+      </label>
+    </div>
+
+    <button id="ops-save-btn" class="mt-4 w-full bg-rose-600 hover:bg-rose-500 text-white py-2 rounded-xl text-sm transition">保存配置</button>
+  </div>
+</div>
+
+<script nonce="<%= nonce %>">
+(function() {
+  const OPS_KEYS = [
+    { id: 'ops-target-nodes', key: 'ops_target_nodes', type: 'int' },
+    { id: 'ops-patrol-interval', key: 'ops_patrol_interval', type: 'int' },
+    { id: 'ops-max-daily-swaps', key: 'ops_max_daily_swaps', type: 'int' },
+    { id: 'ops-max-daily-creates', key: 'ops_max_daily_creates', type: 'int' },
+    { id: 'ops-auto-swap-ip', key: 'ops_auto_swap_ip', type: 'bool' },
+    { id: 'ops-auto-repair', key: 'ops_auto_repair', type: 'bool' },
+    { id: 'ops-auto-scale', key: 'ops_auto_scale', type: 'bool' },
+    { id: 'ops-panel-guard', key: 'ops_panel_guard', type: 'bool' },
+  ];
+
+  window.loadOpsDashboard = async function() {
+    try {
+      const [dashRes, cfgRes] = await Promise.all([
+        fetch('/admin/api/ops-dashboard'),
+        fetch('/admin/api/ops-config')
+      ]);
+      const dash = await dashRes.json();
+      const cfg = await cfgRes.json();
+
+      // 健康卡片
+      document.getElementById('ops-total').textContent = dash.total;
+      document.getElementById('ops-online').textContent = dash.online;
+      document.getElementById('ops-offline').textContent = dash.offline;
+      document.getElementById('ops-blocked').textContent = dash.blocked;
+
+      // 巡检状态
+      document.getElementById('ops-last-patrol').textContent = dash.lastPatrolDisplay || '从未';
+      document.getElementById('ops-patrol-count').textContent = dash.todayStats?.patrols || 0;
+      document.getElementById('ops-swap-count').textContent = dash.todayStats?.swaps || 0;
+      document.getElementById('ops-fix-count').textContent = dash.todayStats?.fixes || 0;
+
+      // 配置
+      for (const k of OPS_KEYS) {
+        const el = document.getElementById(k.id);
+        if (!el) continue;
+        const val = cfg[k.key];
+        if (k.type === 'bool') el.checked = val === 'true';
+        else if (val) el.value = val;
+      }
+
+    } catch (e) { console.error('ops dashboard error', e); }
+  };
+
+  window.saveOpsConfig = async function() {
+    const data = {};
+    for (const k of OPS_KEYS) {
+      const el = document.getElementById(k.id);
+      if (!el) continue;
+      data[k.key] = k.type === 'bool' ? String(el.checked) : el.value;
+    }
+    try {
+      const res = await fetch('/admin/api/ops-config', {
+        method: 'POST', headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': window._csrf || '' },
+        body: JSON.stringify(data)
+      });
+      if (res.ok) showToast('✅ 运维配置已保存');
+      else showToast('❌ 保存失败');
+    } catch (e) { showToast('❌ ' + e.message); }
+  };
+
+  window.loadOpsConfig = window.loadOpsDashboard;
+})();
+
+document.getElementById('ops-refresh-btn')?.addEventListener('click', () => window.loadOpsDashboard?.());
+document.getElementById('ops-save-btn')?.addEventListener('click', () => window.saveOpsConfig?.());
+if (location.hash === '#ops') setTimeout(loadOpsDashboard, 100);
+</script>

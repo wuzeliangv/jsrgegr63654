@@ -1,0 +1,216 @@
+<div class="tab-panel" data-tab="invites">
+  <div class="flex items-center justify-between mb-3 gap-3">
+    <div>
+      <div class="text-white text-sm font-medium">邀请关系</div>
+      <div class="text-gray-500 text-xs mt-1">查看邀请码由谁生成、是否被使用、最终邀请了谁</div>
+    </div>
+    <div class="flex items-center gap-2 flex-wrap justify-end">
+      <select id="invite-status-filter" class="bg-black/30 text-white px-3 py-1.5 rounded-xl border border-white/10 text-xs">
+        <option value="all">全部状态</option>
+        <option value="used">仅已使用</option>
+        <option value="active">仅生效中</option>
+        <option value="expired">仅已过期</option>
+      </select>
+      <input type="text" id="invite-search" placeholder="搜索邀请码 / 邀请人 / 被邀请人" class="bg-black/30 text-white px-3 py-1.5 rounded-xl border border-white/10 text-xs w-56 max-w-full">
+    </div>
+  </div>
+
+  <div class="sm:hidden space-y-3" id="invite-cards">
+    <div class="text-center text-gray-500 text-sm py-8">加载中...</div>
+  </div>
+
+  <div class="hidden sm:block glass rounded-2xl overflow-hidden">
+    <div class="overflow-x-auto">
+      <table class="w-full text-sm text-left">
+        <thead class="text-gray-500 border-b border-white/5 text-xs">
+          <tr>
+            <th class="py-3 px-4">邀请码</th>
+            <th class="py-3 px-4">邀请人</th>
+            <th class="py-3 px-4">被邀请人</th>
+            <th class="py-3 px-4">状态</th>
+            <th class="py-3 px-4">生成时间</th>
+            <th class="py-3 px-4">到期时间</th>
+            <th class="py-3 px-4">使用时间</th>
+          </tr>
+        </thead>
+        <tbody class="text-gray-300" id="invite-tbody">
+          <tr><td colspan="7" class="py-8 text-center text-gray-500">加载中...</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <div class="flex items-center justify-between px-4 py-3 border-t border-white/5">
+      <span class="text-gray-500 text-xs" id="invite-page-info"></span>
+      <div class="flex gap-1" id="invite-pagination"></div>
+    </div>
+  </div>
+
+  <div class="sm:hidden flex items-center justify-between mt-3">
+    <span class="text-gray-500 text-xs" id="invite-page-info-m"></span>
+    <div class="flex gap-1" id="invite-pagination-m"></div>
+  </div>
+
+  <script nonce="<%= nonce %>">
+  (function(){
+    let _invitePage = 1;
+    let _inviteSearchTimer = null;
+    let _inviteStatus = 'all';
+    let _inviteLoading = false;
+
+    function esc(v) {
+      if (v == null) return '';
+      return String(v)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
+    }
+
+    function statusBadge(status) {
+      if (status === 'used') return '<span class="text-[10px] px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300">已使用</span>';
+      if (status === 'expired') return '<span class="text-[10px] px-2 py-0.5 rounded-full bg-red-500/20 text-red-300">已过期</span>';
+      return '<span class="text-[10px] px-2 py-0.5 rounded-full bg-cyan-500/20 text-cyan-300">生效中</span>';
+    }
+
+    function userText(name, email) {
+      if (!name && !email) return '<span class="text-gray-600">-</span>';
+      return `<div class="text-white text-xs">${esc(name || '-')}</div><div class="text-gray-500 text-[11px] mt-0.5">${esc(email || '')}</div>`;
+    }
+
+    function makePageBtn(text, page, active) {
+      const b = document.createElement('button');
+      b.textContent = text;
+      b.className = active ? 'px-2.5 py-1 rounded-lg text-xs bg-rose-600 text-white' : 'px-2.5 py-1 rounded-lg text-xs glass text-gray-400 hover:text-white hover:bg-white/10 transition';
+      if (!active) b.onclick = () => loadInviteRelations(page);
+      return b;
+    }
+
+    function setInviteLoadingState() {
+      const tbody = document.getElementById('invite-tbody');
+      const cards = document.getElementById('invite-cards');
+      const pageInfo = document.getElementById('invite-page-info');
+      const pageInfoM = document.getElementById('invite-page-info-m');
+      const nav = document.getElementById('invite-pagination');
+      const navM = document.getElementById('invite-pagination-m');
+      if (tbody) tbody.innerHTML = '<tr><td colspan="7" class="py-8 text-center text-gray-500">加载中...</td></tr>';
+      if (cards) cards.innerHTML = '<div class="text-center text-gray-500 text-sm py-8">加载中...</div>';
+      if (pageInfo) pageInfo.textContent = '';
+      if (pageInfoM) pageInfoM.textContent = '';
+      if (nav) nav.innerHTML = '';
+      if (navM) navM.innerHTML = '';
+    }
+
+    function setInviteErrorState(message) {
+      const text = esc(message || '邀请记录加载失败，请稍后重试');
+      const tbody = document.getElementById('invite-tbody');
+      const cards = document.getElementById('invite-cards');
+      const pageInfo = document.getElementById('invite-page-info');
+      const pageInfoM = document.getElementById('invite-page-info-m');
+      const nav = document.getElementById('invite-pagination');
+      const navM = document.getElementById('invite-pagination-m');
+      const retryBtn = '<button type="button" class="mt-3 px-3 py-1.5 rounded-lg text-xs bg-white/10 text-white hover:bg-white/15 transition" onclick="window.loadInviteRelations && window.loadInviteRelations(1)">重试</button>';
+      if (tbody) tbody.innerHTML = `<tr><td colspan="7" class="py-8 text-center text-red-300">${text}<div>${retryBtn}</div></td></tr>`;
+      if (cards) cards.innerHTML = `<div class="text-center text-red-300 text-sm py-8">${text}<div>${retryBtn}</div></div>`;
+      if (pageInfo) pageInfo.textContent = '';
+      if (pageInfoM) pageInfoM.textContent = '';
+      if (nav) nav.innerHTML = '';
+      if (navM) navM.innerHTML = '';
+    }
+
+    window.loadInviteRelations = async function(page = 1) {
+      if (_inviteLoading) return;
+      _inviteLoading = true;
+      _invitePage = page;
+      const search = (document.getElementById('invite-search')?.value || '').trim();
+      const params = new URLSearchParams({ page, search, status: _inviteStatus });
+      setInviteLoadingState();
+      try {
+        const resp = await fetch('/admin/api/invite-relations?' + params);
+        if (!resp.ok) throw new Error('邀请记录接口返回异常');
+        const data = await resp.json();
+        const tbody = document.getElementById('invite-tbody');
+        const cards = document.getElementById('invite-cards');
+        const rows = data.rows || [];
+
+        if (rows.length === 0) {
+          tbody.innerHTML = '<tr><td colspan="7" class="py-8 text-center text-gray-500">暂无邀请记录</td></tr>';
+          cards.innerHTML = '<div class="text-center text-gray-500 text-sm py-8">暂无邀请记录</div>';
+          document.getElementById('invite-page-info').textContent = '';
+          document.getElementById('invite-page-info-m').textContent = '';
+          document.getElementById('invite-pagination').innerHTML = '';
+          document.getElementById('invite-pagination-m').innerHTML = '';
+          return;
+        }
+
+        tbody.innerHTML = rows.map((row) => `
+          <tr class="border-b border-white/5 hover:bg-white/[0.02]">
+            <td class="py-3 px-4">
+              <div class="text-emerald-300 font-mono text-xs tracking-[0.15em]">${esc(row.code)}</div>
+            </td>
+            <td class="py-3 px-4">${userText(row.inviter_username, row.inviter_email)}</td>
+            <td class="py-3 px-4">${userText(row.invitee_username, row.invitee_email)}</td>
+            <td class="py-3 px-4">${statusBadge(row.status)}</td>
+            <td class="py-3 px-4 text-xs text-gray-400">${esc(row.created_at_display || '-')}</td>
+            <td class="py-3 px-4 text-xs text-gray-400">${esc(row.expires_at_display || '-')}</td>
+            <td class="py-3 px-4 text-xs text-gray-400">${esc(row.used_at_display || '-')}</td>
+          </tr>
+        `).join('');
+
+        cards.innerHTML = rows.map((row) => `
+          <div class="glass rounded-2xl p-4 space-y-2">
+            <div class="flex items-center justify-between gap-2">
+              <div class="text-emerald-300 font-mono text-xs tracking-[0.15em]">${esc(row.code)}</div>
+              ${statusBadge(row.status)}
+            </div>
+            <div class="grid grid-cols-1 gap-2 text-xs">
+              <div><span class="text-gray-500">邀请人</span><div class="mt-1">${userText(row.inviter_username, row.inviter_email)}</div></div>
+              <div><span class="text-gray-500">被邀请人</span><div class="mt-1">${userText(row.invitee_username, row.invitee_email)}</div></div>
+              <div><span class="text-gray-500">生成时间</span><span class="block text-gray-400 mt-1">${esc(row.created_at_display || '-')}</span></div>
+              <div><span class="text-gray-500">到期时间</span><span class="block text-gray-400 mt-1">${esc(row.expires_at_display || '-')}</span></div>
+              <div><span class="text-gray-500">使用时间</span><span class="block text-gray-400 mt-1">${esc(row.used_at_display || '-')}</span></div>
+            </div>
+          </div>
+        `).join('');
+
+        const total = data.total || 0;
+        const limit = 20;
+        const pages = Math.ceil(total / limit);
+        const start = (page - 1) * limit + 1;
+        const end = Math.min(page * limit, total);
+        document.getElementById('invite-page-info').textContent = `第 ${start}-${end} 条，共 ${total} 条`;
+        document.getElementById('invite-page-info-m').textContent = `${start}-${end} / ${total}`;
+
+        const nav = document.getElementById('invite-pagination');
+        const navM = document.getElementById('invite-pagination-m');
+        nav.innerHTML = '';
+        navM.innerHTML = '';
+        if (pages <= 1) return;
+        if (page > 1) { nav.appendChild(makePageBtn('‹', page - 1, false)); navM.appendChild(makePageBtn('‹', page - 1, false)); }
+        let s = Math.max(1, page - 3), e = Math.min(pages, s + 6);
+        if (e - s < 6) s = Math.max(1, e - 6);
+        for (let p = s; p <= e; p++) { nav.appendChild(makePageBtn(p, p, p === page)); navM.appendChild(makePageBtn(p, p, p === page)); }
+        if (page < pages) { nav.appendChild(makePageBtn('›', page + 1, false)); navM.appendChild(makePageBtn('›', page + 1, false)); }
+      } catch (e) {
+        setInviteErrorState(e && e.message ? e.message : '邀请记录加载失败，请稍后重试');
+      } finally {
+        _inviteLoading = false;
+      }
+    };
+
+    const input = document.getElementById('invite-search');
+    if (input) {
+      input.addEventListener('input', () => {
+        clearTimeout(_inviteSearchTimer);
+        _inviteSearchTimer = setTimeout(() => loadInviteRelations(1), 300);
+      });
+    }
+    const filter = document.getElementById('invite-status-filter');
+    if (filter) {
+      filter.addEventListener('change', () => {
+        _inviteStatus = filter.value || 'all';
+        loadInviteRelations(1);
+      });
+    }
+  })();
+  </script>
+</div>

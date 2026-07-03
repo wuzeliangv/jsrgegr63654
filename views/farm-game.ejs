@@ -1,0 +1,124 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>我的农场</title>
+<script src="https://telegram.org/js/telegram-web-app.js"></script>
+<style nonce="<%= nonce %>">
+*{margin:0;padding:0;box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;
+  background:#0f2233 url('/img/farm/bg.jpg') center top/cover no-repeat fixed;
+  min-height:100vh;color:#eaf6f5;padding:14px;padding-bottom:96px;overflow-x:hidden}
+/* 月夜氛围:轻微暗角,让地块更聚焦 */
+body::before{content:'';position:fixed;inset:0;pointer-events:none;z-index:0;
+  background:radial-gradient(120% 80% at 50% 38%,rgba(10,25,40,0) 40%,rgba(8,18,30,.55) 100%)}
+.head{text-align:center;margin:4px 0 14px;position:relative;z-index:1}
+.head h1{font-size:1.45rem;color:#fff;text-shadow:0 2px 6px rgba(155,90,40,.35);letter-spacing:1px}
+.head .sub{font-size:.74rem;color:#fff;opacity:.9;margin-top:2px;text-shadow:0 1px 3px rgba(155,90,40,.3)}
+
+.bar{position:relative;z-index:1;background:rgba(14,30,40,.62);backdrop-filter:blur(10px);border-radius:18px;
+  padding:12px 16px;margin-bottom:16px;box-shadow:0 6px 18px rgba(6,18,28,.4);border:1px solid rgba(120,235,220,.28)}
+.bar .row{display:flex;justify-content:space-between;align-items:center;font-size:.82rem;color:#cfeee9}
+.bar .row+.row{margin-top:7px}
+.bar b{color:#6fe9d6;font-size:.95rem}
+.bar .note{font-size:.72rem;color:#9fc7c2;margin-top:8px;text-align:center}
+
+.grid{position:relative;z-index:1;display:grid;grid-template-columns:1fr 1fr;gap:14px}
+/* 土地：立体田垄 + 颗粒土壤 */
+.plot{position:relative;padding:14px 8px;text-align:center;min-height:158px;
+  display:flex;flex-direction:column;align-items:center;justify-content:center;cursor:pointer;
+  background:url('/img/farm/tile.png?v=2') center center/contain no-repeat;
+  filter:drop-shadow(0 3px 8px rgba(2,10,16,.62));
+  transition:transform .12s,filter .2s}
+.plot:active{transform:scale(.97)}
+.plot.locked{filter:grayscale(.85) brightness(.5);cursor:not-allowed}
+.plot.empty{opacity:.96}
+.plot .icon{font-size:3rem;line-height:1;filter:drop-shadow(0 4px 4px rgba(60,35,10,.35))}
+.plot img.icon{position:absolute;left:50%;bottom:48%;transform:translateX(-50%);width:82px;height:88px;object-fit:contain;object-position:center bottom;display:block;image-rendering:auto;animation:lotusglow 3.6s ease-in-out infinite}
+@keyframes lotusglow{0%,100%{filter:drop-shadow(0 3px 6px rgba(10,20,35,.5)) drop-shadow(0 0 7px rgba(140,250,235,.7)) drop-shadow(0 0 16px rgba(95,235,225,.45))}50%{filter:drop-shadow(0 3px 6px rgba(10,20,35,.5)) drop-shadow(0 0 13px rgba(150,255,242,1)) drop-shadow(0 0 28px rgba(95,235,225,.8)) drop-shadow(0 0 40px rgba(95,235,225,.5))}}
+.plot .icon.sprout{transform-origin:bottom center}
+@keyframes sway{0%,100%{transform:rotate(-4deg)}50%{transform:rotate(4deg)}}
+.plot .nm{font-size:.8rem;margin-top:8px;color:#fff;font-weight:700;text-shadow:0 1px 3px rgba(60,35,10,.5)}
+.plot .st{font-size:.72rem;margin-top:4px;color:#fff6e8;text-shadow:0 1px 2px rgba(60,35,10,.5)}
+.plot .badge{position:absolute;top:8px;left:9px;font-size:.66rem;background:rgba(10,30,40,.55);color:#bff5ec;font-weight:700;padding:1px 8px;border-radius:10px;z-index:2}
+/* 成熟月华光 */
+.plot.mature{background:url('/img/farm/tile.png?v=2') center center/contain no-repeat;animation:ripe 1.6s ease-in-out infinite}
+.plot.mature .icon{}
+@keyframes ripe{0%,100%{filter:drop-shadow(0 0 2px rgba(95,235,220,.2))}50%{filter:drop-shadow(0 0 14px rgba(95,235,220,.9))}}
+@keyframes bounce{0%,100%{transform:translateY(0)}50%{transform:translateY(-7px)}}
+/* 生长进度细条 */
+.gbar{position:absolute;bottom:12px;left:13%;width:74%;height:5px;border-radius:4px;background:rgba(0,0,0,.35);overflow:hidden;z-index:3}
+.gbar>i{display:block;height:100%;border-radius:4px;background:linear-gradient(90deg,#7fe9d6,#4fc3f7);transition:width .5s}
+.timer{position:absolute;top:6px;left:50%;transform:translateX(-50%);z-index:3;white-space:nowrap;
+  font-size:.66rem;font-weight:600;color:#d7f5ef;background:rgba(8,20,30,.66);
+  padding:2px 9px;border-radius:11px;border:1px solid rgba(120,235,220,.3)}
+.timer.ripe{color:#a8f6e7;background:rgba(18,64,60,.82);border-color:rgba(120,245,225,.6)}
+
+.actbar{position:fixed;left:0;right:0;bottom:0;z-index:5;padding:12px 14px calc(12px + env(safe-area-inset-bottom));
+  background:rgba(10,24,34,.82);backdrop-filter:blur(8px);box-shadow:0 -4px 18px rgba(6,18,28,.4);display:flex;justify-content:center}
+.btn{flex:0 1 100%;max-width:420px;border:none;border-radius:16px;padding:14px;font-size:1rem;font-weight:800;color:#fff;cursor:pointer;transition:transform .1s,opacity .2s;letter-spacing:1px}
+.btn:active{transform:scale(.97)}
+.btn.harvest{background:linear-gradient(135deg,#f6a623,#e8741e);box-shadow:0 6px 14px rgba(232,116,30,.4)}
+.btn.steal{background:linear-gradient(135deg,#5fb0e9,#3f6fd8);box-shadow:0 6px 14px rgba(63,111,216,.4)}
+.btn:disabled{opacity:.5;cursor:not-allowed;box-shadow:none}
+/* 邻居农场:全屏视图,布局与自家农场一致,仅标题不同 */
+.nfarm{position:fixed;inset:0;z-index:50;display:none;
+  background:#0f2233 url('/img/farm/bg.jpg') center top/cover no-repeat;
+  overflow-y:auto;padding:14px;padding-bottom:96px}
+.nfarm.show{display:block}
+.nfarm::before{content:'';position:fixed;inset:0;pointer-events:none;z-index:0;
+  background:radial-gradient(120% 80% at 50% 38%,rgba(10,25,40,0) 40%,rgba(8,18,30,.55) 100%)}
+.nfarm .actbar{z-index:51;gap:10px}
+.nfarm .actbar .btn{flex:1 1 0;max-width:206px}
+.btn.ghost{background:rgba(255,255,255,.08);border:1px solid rgba(120,235,220,.3);box-shadow:none}
+.plot.taken{filter:grayscale(.6) brightness(.7);cursor:not-allowed;animation:none}
+.plot .ntag{position:absolute;top:8px;right:9px;font-size:.66rem;background:rgba(95,235,220,.18);color:#aef3e6;font-weight:700;padding:1px 8px;border-radius:10px;z-index:2}
+#toast{position:fixed;top:18px;left:50%;transform:translateX(-50%) translateY(-20px);background:rgba(91,58,24,.92);color:#fff;padding:11px 20px;border-radius:22px;font-size:.86rem;opacity:0;transition:all .3s;z-index:100;pointer-events:none;max-width:88%;text-align:center;box-shadow:0 6px 18px rgba(0,0,0,.25)}
+#toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
+.loading{grid-column:1/-1;text-align:center;color:#fff;padding:46px;font-size:.95rem;text-shadow:0 1px 3px rgba(155,90,40,.3)}
+</style>
+</head>
+<body>
+<div class="head">
+  <h1>🌾 我的农场</h1>
+  <div class="sub">每日签到领种子 · 种下 24 小时收获流量</div>
+</div>
+
+<div class="bar">
+  <div class="row"><span>🌱 种子库存</span><b><span id="seeds">-</span> / <span id="seedcap">-</span> 颗</b></div>
+  <div class="row"><span>🗺️ 解锁地块 <span id="unlocked">-</span>/<span id="total">4</span></span><span>会员 <b id="grouplabel">-</b></span></div>
+  <div class="row"><span>🌙 月华宝莲 · 24h 成熟</span><span>单块收 <b><span id="yieldgb">5</span> GB</b></span></div>
+</div>
+
+<div id="grid" class="grid"><div class="loading">🌻 加载中...</div></div>
+
+<div class="actbar">
+  <button id="btnVisit" class="btn steal">🥬 去邻居家偷菜</button>
+</div>
+
+<div id="nFarm" class="nfarm">
+  <div class="head">
+    <h1>🏡 <span id="nName">邻居</span>的农场</h1>
+    <div class="sub">点成熟的月华宝莲即可偷流量 · 偷不影响你自己的地</div>
+  </div>
+
+  <div class="bar">
+    <div class="row"><span>🥬 每次偷取</span><b><span id="nPer">1</span> GB</b></div>
+    <div class="row"><span>📦 今天还能偷</span><b><span id="nLeft">-</span> 次</b></div>
+    <div class="row"><span>🛡️ 每块地一茬最多被偷</span><b>2 GB</b></div>
+  </div>
+
+  <div id="ngrid" class="grid"></div>
+
+  <div class="actbar">
+    <button id="nNext" class="btn steal">🔀 换一家</button>
+    <button id="nDone" class="btn ghost">收工回家</button>
+  </div>
+</div>
+
+<div id="toast"></div>
+
+<script src="/js/farm-game.js?v=20260625neighbor"></script>
+</body>
+</html>

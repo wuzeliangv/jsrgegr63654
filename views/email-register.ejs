@@ -1,0 +1,178 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>邮箱注册 - 大姨子的诱惑</title>
+  <link rel="icon" type="image/svg+xml" href="/favicon.svg">
+  <link rel="alternate icon" href="/favicon.ico">
+  <link rel="stylesheet" href="/css/tailwind.min.css">
+  <style nonce="<%= nonce %>">
+    *{font-family:'Noto Sans SC',system-ui,-apple-system,sans-serif;box-sizing:border-box}
+    body{background:#08060d;min-height:100vh;position:relative;overflow-x:hidden}
+    body::before{content:'';position:fixed;top:-50%;left:-40%;width:90vw;height:90vw;border-radius:50%;background:radial-gradient(circle,rgba(244,63,94,0.12) 0%,rgba(168,85,247,0.06) 40%,transparent 65%);animation:drift 12s ease-in-out infinite alternate}
+    body::after{content:'';position:fixed;bottom:-40%;right:-30%;width:70vw;height:70vw;border-radius:50%;background:radial-gradient(circle,rgba(251,146,60,0.08) 0%,rgba(244,63,94,0.04) 40%,transparent 65%);animation:drift 12s ease-in-out infinite alternate-reverse}
+    @keyframes drift{0%{transform:translate(0,0) scale(1)}100%{transform:translate(40px,30px) scale(1.05)}}
+    @keyframes fadeUp{from{opacity:0;transform:translateY(24px)}to{opacity:1;transform:translateY(0)}}
+    @keyframes glow{0%,100%{box-shadow:0 0 20px rgba(244,63,94,0.3),0 0 60px rgba(244,63,94,0.1)}50%{box-shadow:0 0 30px rgba(244,63,94,0.5),0 0 80px rgba(244,63,94,0.15)}}
+    @keyframes float{0%,100%{transform:translateY(0)}50%{transform:translateY(-6px)}}
+    @keyframes twinkle{0%,100%{opacity:0.2}50%{opacity:0.8}}
+    .stars{position:fixed;top:0;left:0;width:100%;height:100%;pointer-events:none;z-index:0}
+    .star{position:absolute;width:2px;height:2px;background:#fff;border-radius:50%;animation:twinkle var(--d) ease-in-out infinite;opacity:0.2}
+    .card{background:rgba(255,255,255,0.03);backdrop-filter:blur(24px);border:1px solid rgba(255,255,255,0.06);box-shadow:0 8px 40px rgba(0,0,0,0.5),inset 0 1px 0 rgba(255,255,255,0.05);animation:fadeUp .6s ease-out;position:relative;z-index:1}
+    .logo-wrap{animation:float 4s ease-in-out infinite}
+    .logo{background:linear-gradient(135deg,#f43f5e,#e11d48,#be123c);animation:glow 3s ease-in-out infinite;position:relative}
+    .logo::after{content:'';position:absolute;inset:-4px;border-radius:18px;background:linear-gradient(135deg,rgba(244,63,94,0.4),transparent,rgba(168,85,247,0.3));z-index:-1;filter:blur(8px)}
+    .input-wrap{position:relative}
+    .input-wrap svg{position:absolute;left:14px;top:50%;transform:translateY(-50%);width:16px;height:16px;color:rgba(255,255,255,0.25);pointer-events:none;transition:color .2s}
+    .input-wrap:focus-within svg{color:rgba(244,63,94,0.7)}
+    .inp{width:100%;background:rgba(255,255,255,0.04);color:#fff;padding:12px 16px 12px 42px;border-radius:12px;border:1px solid rgba(255,255,255,0.08);font-size:14px;outline:none;transition:all .3s}
+    .inp-plain{width:100%;background:rgba(255,255,255,0.04);color:#fff;padding:12px 16px;border-radius:12px;border:1px solid rgba(255,255,255,0.08);font-size:14px;outline:none;transition:all .3s}
+    .inp:focus,.inp-plain:focus{border-color:rgba(244,63,94,0.5);background:rgba(255,255,255,0.06);box-shadow:0 0 0 3px rgba(244,63,94,0.08)}
+    .inp::placeholder,.inp-plain::placeholder{color:rgba(255,255,255,0.2)}
+    .btn-primary{background:linear-gradient(135deg,#f43f5e,#e11d48);box-shadow:0 4px 24px rgba(244,63,94,0.35);transition:all .3s;position:relative;overflow:hidden}
+    .btn-primary::before{content:'';position:absolute;top:0;left:-100%;width:100%;height:100%;background:linear-gradient(90deg,transparent,rgba(255,255,255,0.15),transparent);transition:left .5s}
+    .btn-primary:hover::before{left:100%}
+    .btn-primary:hover{box-shadow:0 8px 36px rgba(244,63,94,0.5);transform:translateY(-1px)}
+    .btn-primary:active{transform:translateY(0)}
+    .btn-code{background:rgba(244,63,94,0.12);border:1px solid rgba(244,63,94,0.25);color:#fb7185;transition:all .3s;white-space:nowrap}
+    .btn-code:hover{background:rgba(244,63,94,0.2)}
+    .btn-code:disabled{opacity:0.4;cursor:not-allowed}
+    .btn-secondary{background:rgba(255,255,255,0.04);border:1px solid rgba(255,255,255,0.08);transition:all .3s}
+    .btn-secondary:hover{background:rgba(255,255,255,0.08);border-color:rgba(244,63,94,0.3)}
+  </style>
+</head>
+<body class="flex items-center justify-center px-4 py-8">
+  <div class="stars" id="stars"></div>
+  <main class="card rounded-3xl p-10 max-w-sm w-full text-center" role="main" aria-label="邮箱注册">
+    <div class="logo-wrap">
+      <div class="logo w-18 h-18 mx-auto mb-6 rounded-2xl flex items-center justify-center text-4xl" style="width:72px;height:72px" aria-hidden="true">🍑</div>
+    </div>
+    <h1 class="text-2xl font-bold text-white mb-1">邮箱注册</h1>
+    <p class="text-gray-500 text-xs mb-8 tracking-widest">CREATE ACCOUNT</p>
+    <% if (registrationClosed) { %>
+      <div class="rounded-xl p-5 mb-5" style="border:1px solid rgba(251,191,36,0.2);background:rgba(251,191,36,0.06)">
+        <p class="text-amber-300 text-sm">🚫 本站暂未开放注册</p>
+      </div>
+      <a href="/auth/login" class="btn-secondary block w-full text-gray-300 font-medium py-3 px-6 rounded-xl text-sm text-center">返回登录</a>
+    <% } else { %>
+    <% if (error) { %>
+      <div class="rounded-xl p-3 mb-5" style="border:1px solid rgba(239,68,68,0.2);background:rgba(239,68,68,0.08)" role="alert">
+        <p class="text-red-400 text-sm"><%= error %></p>
+      </div>
+    <% } %>
+    <% if (message) { %>
+      <div class="rounded-xl p-3 mb-5" style="border:1px solid rgba(52,211,153,0.2);background:rgba(52,211,153,0.08)" role="status">
+        <p style="color:#6ee7b7" class="text-sm"><%= message %></p>
+      </div>
+    <% } %>
+    <form method="POST" action="/auth/email-register" class="text-left" id="reg-form">
+      <% if (!firstUserMode && inviteEnabled) { %>
+      <label class="text-gray-500 text-xs block mb-1.5 ml-1">邀请码</label>
+      <div class="input-wrap mb-3">
+        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M21 11.25v8.25a1.5 1.5 0 01-1.5 1.5H5.25a1.5 1.5 0 01-1.5-1.5v-8.25M12 4.875A2.625 2.625 0 109.375 7.5H12m0-2.625V7.5m0-2.625A2.625 2.625 0 1114.625 7.5H12m0 0V21m-8.625-9.75h18c.621 0 1.125-.504 1.125-1.125v-1.5c0-.621-.504-1.125-1.125-1.125h-18c-.621 0-1.125.504-1.125 1.125v1.5c0 .621.504 1.125 1.125 1.125z"/></svg>
+        <input type="text" name="inviteCode" id="reg-invite-code" required autocomplete="off" class="inp uppercase" style="letter-spacing:0.15em;text-align:center;padding-left:42px" value="<%= inviteCode %>" placeholder="输入邀请码">
+      </div>
+      <p class="text-gray-600 text-[11px] mb-4 ml-1">邀请码 7 天内有效，每个邀请码仅可使用一次</p>
+      <% } %>
+      <label class="text-gray-500 text-xs block mb-1.5 ml-1">邮箱</label>
+      <div class="flex gap-2 mb-2">
+        <div class="input-wrap flex-1">
+          <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M21.75 6.75v10.5a2.25 2.25 0 01-2.25 2.25h-15a2.25 2.25 0 01-2.25-2.25V6.75m19.5 0A2.25 2.25 0 0019.5 4.5h-15a2.25 2.25 0 00-2.25 2.25m19.5 0v.243a2.25 2.25 0 01-1.07 1.916l-7.5 4.615a2.25 2.25 0 01-2.36 0L3.32 8.91a2.25 2.25 0 01-1.07-1.916V6.75"/></svg>
+          <input type="email" name="email" id="reg-email" required autocomplete="email" class="inp" value="<%= email %>">
+        </div>
+        <button type="button" id="btn-send-code" class="btn-code shrink-0 px-4 py-2 rounded-xl text-xs font-medium">发送验证码</button>
+      </div>
+      <% if (allowedDomains) { %>
+        <p class="text-gray-600 text-[11px] mb-4 ml-1">仅支持 <span class="text-rose-400"><%= allowedDomains.split(',').map(d => '@' + d).join('、') %></span> 邮箱注册</p>
+      <% } else { %>
+        <div class="mb-3"></div>
+      <% } %>
+      <label class="text-gray-500 text-xs block mb-1.5 ml-1">验证码</label>
+      <div class="input-wrap mb-4">
+        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12.75L11.25 15 15 9.75m-3-7.036A11.959 11.959 0 013.598 6 11.99 11.99 0 003 9.749c0 5.592 3.824 10.29 9 11.623 5.176-1.332 9-6.03 9-11.622 0-1.31-.21-2.571-.598-3.751h-.152c-3.196 0-6.1-1.248-8.25-3.285z"/></svg>
+        <input type="text" name="code" maxlength="6" required autocomplete="one-time-code" inputmode="numeric" class="inp" style="letter-spacing:6px;text-align:center;padding-left:42px" placeholder="6位验证码">
+      </div>
+      <label class="text-gray-500 text-xs block mb-1.5 ml-1">密码</label>
+      <div class="input-wrap mb-4">
+        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M16.5 10.5V6.75a4.5 4.5 0 10-9 0v3.75m-.75 11.25h10.5a2.25 2.25 0 002.25-2.25v-6.75a2.25 2.25 0 00-2.25-2.25H6.75a2.25 2.25 0 00-2.25 2.25v6.75a2.25 2.25 0 002.25 2.25z"/></svg>
+        <input type="password" name="password" minlength="8" required autocomplete="new-password" class="inp" placeholder="至少8位密码">
+      </div>
+      <label class="text-gray-500 text-xs block mb-1.5 ml-1">确认密码</label>
+      <div class="input-wrap mb-6">
+        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M16.5 10.5V6.75a4.5 4.5 0 10-9 0v3.75m-.75 11.25h10.5a2.25 2.25 0 002.25-2.25v-6.75a2.25 2.25 0 00-2.25-2.25H6.75a2.25 2.25 0 00-2.25 2.25v6.75a2.25 2.25 0 002.25 2.25z"/></svg>
+        <input type="password" name="passwordConfirm" minlength="8" required autocomplete="new-password" class="inp" placeholder="再次输入密码">
+      </div>
+      <button type="submit" class="btn-primary w-full text-white font-semibold py-3 px-6 rounded-xl text-sm">注册并登录</button>
+    </form>
+    <a href="/auth/login" class="btn-secondary block w-full text-gray-300 font-medium py-3 px-6 rounded-xl text-sm text-center mt-3">
+      返回登录
+    </a>
+    <% } %>
+  </main>
+  <script nonce="<%= nonce %>">
+    !function(){const c=document.getElementById('stars');for(let i=0;i<60;i++){const s=document.createElement('div');s.className='star';s.style.cssText='left:'+Math.random()*100+'%;top:'+Math.random()*100+'%;--d:'+(2+Math.random()*4)+'s;animation-delay:-'+Math.random()*4+'s;width:'+(1+Math.random()*2)+'px;height:'+(1+Math.random()*2)+'px';c.appendChild(s)}}();
+
+    const btn = document.getElementById('btn-send-code');
+    if(btn) btn.addEventListener('click', async () => {
+      const email = document.getElementById('reg-email').value.trim();
+      const inviteCodeInput = document.getElementById('reg-invite-code');
+      const inviteCode = inviteCodeInput ? inviteCodeInput.value.trim().toUpperCase() : '';
+      if (!email) return;
+      btn.disabled = true;
+      btn.textContent = '发送中…';
+      try {
+        const res = await fetch('/auth/send-email-code', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ email, inviteCode })
+        });
+        const data = await res.json();
+        if (data.ok) {
+          if (data.skipCode) {
+            document.querySelector('input[name="code"]').value = '000000';
+            btn.textContent = '已跳过';
+            showToast('首位用户无需验证码，请直接设置密码并注册');
+            return;
+          }
+          let sec = 60;
+          btn.textContent = sec + 's';
+          const t = setInterval(() => {
+            if (--sec <= 0) { clearInterval(t); btn.disabled = false; btn.textContent = '重新发送'; }
+            else btn.textContent = sec + 's';
+          }, 1000);
+        } else {
+          btn.disabled = false;
+          btn.textContent = '发送验证码';
+          showToast(data.error || '发送失败');
+        }
+      } catch {
+        btn.disabled = false;
+        btn.textContent = '发送验证码';
+        showToast('网络错误');
+      }
+    });
+
+    function showToast(msg) {
+      let el = document.getElementById('_toast');
+      if (!el) {
+        el = document.createElement('div');
+        el.id = '_toast';
+        Object.assign(el.style, {
+          position:'fixed',top:'0',left:'0',width:'100%',height:'100%',
+          display:'flex',alignItems:'center',justifyContent:'center',zIndex:'9999',
+          background:'rgba(0,0,0,0.5)',backdropFilter:'blur(4px)'
+        });
+        el.innerHTML = `<div style="background:rgba(20,18,28,0.95);border:1px solid rgba(255,255,255,0.08);border-radius:16px;padding:24px 28px;max-width:320px;width:90%;text-align:center;box-shadow:0 16px 48px rgba(0,0,0,0.5)">
+          <p id="_toast_msg" style="color:#e5e7eb;font-size:14px;margin:0 0 18px"></p>
+          <button id="_toast_btn" style="background:linear-gradient(135deg,#f43f5e,#e11d48);color:#fff;border:none;border-radius:10px;padding:8px 32px;font-size:14px;cursor:pointer;box-shadow:0 4px 16px rgba(244,63,94,0.3)">确定</button>
+        </div>`;
+        document.body.appendChild(el);
+        document.getElementById('_toast_btn').addEventListener('click', function(){ el.style.display='none'; });
+      }
+      document.getElementById('_toast_msg').textContent = msg;
+      el.style.display = 'flex';
+    }
+  </script>
+</body>
+</html>

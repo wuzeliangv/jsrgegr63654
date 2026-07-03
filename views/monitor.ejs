@@ -1,0 +1,331 @@
+<%- include('partials/head', { title: '探针监控' }) %>
+
+  <!-- 导航 -->
+  <nav class="glass-solid sticky top-0 z-40 px-6 py-3">
+    <div class="max-w-6xl mx-auto flex items-center justify-between">
+      <div class="flex items-center gap-3">
+        <div class="w-8 h-8 rounded-lg bg-gradient-to-br from-cyan-500 to-blue-500 flex items-center justify-center text-sm">📡</div>
+        <span class="text-white font-semibold hidden sm:block">探针监控</span>
+      </div>
+      <div class="flex items-center gap-3">
+        <span id="monitor-stats" class="text-gray-500 text-xs hidden sm:block"></span>
+        <span class="text-gray-300 text-sm hidden sm:block"><%= user.name || user.username %></span>
+        <a href="/" class="text-xs px-3 py-1.5 rounded-full glass text-gray-300 hover:text-white transition">返回面板</a>
+        <a href="/auth/logout" class="text-xs px-3 py-1.5 rounded-full glass text-gray-300 hover:text-red-400 transition">退出</a>
+      </div>
+    </div>
+  </nav>
+
+  <main class="max-w-6xl mx-auto px-4 sm:px-6 py-6">
+    <!-- 概览视图 -->
+    <div id="monitor-overview">
+      <div id="monitor-cards" class="grid grid-cols-1 md:grid-cols-2 gap-3">
+        <div class="text-gray-500 text-sm text-center py-8">加载中...</div>
+      </div>
+    </div>
+
+    <!-- 详情视图 -->
+    <div id="monitor-detail" style="display:none">
+      <div class="flex items-center gap-3 mb-4">
+        <button onclick="monitorBack()" class="text-xs px-3 py-1.5 rounded-lg glass text-gray-300 hover:text-white transition">← 返回</button>
+        <h2 class="text-lg font-semibold text-white" id="monitor-detail-title"></h2>
+      </div>
+      <div class="flex gap-2 mb-4" id="monitor-range-btns">
+        <button onclick="switchMonitorRange('1h')" class="monitor-range-btn active text-xs px-3 py-1.5 rounded-lg glass text-gray-300 hover:text-white transition" data-range="1h">1小时</button>
+        <button onclick="switchMonitorRange('6h')" class="monitor-range-btn text-xs px-3 py-1.5 rounded-lg glass text-gray-300 hover:text-white transition" data-range="6h">6小时</button>
+        <button onclick="switchMonitorRange('24h')" class="monitor-range-btn text-xs px-3 py-1.5 rounded-lg glass text-gray-300 hover:text-white transition" data-range="24h">24小时</button>
+        <button onclick="switchMonitorRange('7d')" class="monitor-range-btn text-xs px-3 py-1.5 rounded-lg glass text-gray-300 hover:text-white transition" data-range="7d">7天</button>
+      </div>
+      <div id="monitor-detail-status" class="mb-4"></div>
+      <div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
+        <div class="glass rounded-2xl p-4">
+          <h3 class="text-sm text-gray-400 mb-2">CPU 使用率 (%)</h3>
+          <canvas id="chart-cpu" height="200"></canvas>
+        </div>
+        <div class="glass rounded-2xl p-4">
+          <h3 class="text-sm text-gray-400 mb-2">内存使用率 (%)</h3>
+          <canvas id="chart-mem" height="200"></canvas>
+        </div>
+        <div class="glass rounded-2xl p-4">
+          <h3 class="text-sm text-gray-400 mb-2">磁盘使用率 (%)</h3>
+          <canvas id="chart-disk" height="200"></canvas>
+        </div>
+        <div class="glass rounded-2xl p-4">
+          <h3 class="text-sm text-gray-400 mb-2">网络带宽</h3>
+          <canvas id="chart-net" height="200"></canvas>
+        </div>
+        <div class="glass rounded-2xl p-4 lg:col-span-2">
+          <h3 class="text-sm text-gray-400 mb-2">系统负载</h3>
+          <canvas id="chart-load" height="200"></canvas>
+        </div>
+      </div>
+    </div>
+  </main>
+
+  <style>
+    .bar-track { background: rgba(255,255,255,0.06); border-radius: 4px; height: 14px; position: relative; overflow: hidden; }
+    .bar-fill { height: 100%; border-radius: 4px; transition: width 0.6s ease; min-width: 2px; }
+    .bar-label { position: absolute; right: 4px; top: 50%; transform: translateY(-50%); font-size: 10px; color: rgba(255,255,255,0.7); line-height: 1; }
+    .bar-green { background: linear-gradient(90deg, #22c55e, #4ade80); }
+    .bar-yellow { background: linear-gradient(90deg, #eab308, #facc15); }
+    .bar-red { background: linear-gradient(90deg, #ef4444, #f87171); }
+    .node-card { transition: all 0.2s ease; }
+    .node-card:hover { transform: translateY(-1px); box-shadow: 0 4px 20px rgba(6,182,212,0.1); }
+    .status-dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; }
+    .status-dot.online { background: #22c55e; box-shadow: 0 0 6px rgba(34,197,94,0.5); }
+    .status-dot.offline { background: #ef4444; box-shadow: 0 0 6px rgba(239,68,68,0.5); }
+    @keyframes pulse-dot { 0%,100% { opacity: 1; } 50% { opacity: 0.5; } }
+    .status-dot.online { animation: pulse-dot 2s ease-in-out infinite; }
+  </style>
+
+  <script src="/js/chart.umd.min.js"></script>
+  <script nonce="<%= nonce %>">
+  var _monitorRefreshTimer = null;
+  var _monitorCharts = {};
+  var _currentMonitorNodeId = null;
+  var _currentMonitorRange = '1h';
+  var _monitorApiBase = '/api/monitor';
+  var REFRESH_INTERVAL = 2000;
+
+  // 流量插值动画状态
+  var _trafficSnapshots = {}; // agentNodeId -> { rx, tx, rxRate, txRate, ts }
+  var _trafficAnimFrame = null;
+
+  function formatBandwidth(bytesPerSec) {
+    if (bytesPerSec == null) return '-';
+    if (bytesPerSec < 1024) return bytesPerSec.toFixed(0) + ' B/s';
+    if (bytesPerSec < 1024 * 1024) return (bytesPerSec / 1024).toFixed(1) + ' KB/s';
+    if (bytesPerSec < 1024 * 1024 * 1024) return (bytesPerSec / (1024 * 1024)).toFixed(1) + ' MB/s';
+    return (bytesPerSec / (1024 * 1024 * 1024)).toFixed(2) + ' GB/s';
+  }
+  function formatBytes(b) {
+    if (b == null) return '-';
+    if (b < 1024) return b + ' B';
+    if (b < 1024 * 1024) return (b / 1024).toFixed(1) + ' KB';
+    if (b < 1024 * 1024 * 1024) return (b / (1024 * 1024)).toFixed(1) + ' MB';
+    if (b < 1024 * 1024 * 1024 * 1024) return (b / (1024 * 1024 * 1024)).toFixed(3) + ' GB';
+    return (b / (1024 * 1024 * 1024 * 1024)).toFixed(3) + ' TB';
+  }
+  function formatUptime(seconds) {
+    if (seconds == null) return '-';
+    var d = Math.floor(seconds / 86400);
+    var h = Math.floor((seconds % 86400) / 3600);
+    var m = Math.floor((seconds % 3600) / 60);
+    if (d > 0) return d + '天' + h + '时';
+    if (h > 0) return h + '时' + m + '分';
+    return m + '分';
+  }
+  function escapeHtml(s) { var d = document.createElement('div'); d.textContent = s; return d.innerHTML; }
+
+  function barColor(v) {
+    if (v == null) return 'bar-green';
+    if (v < 50) return 'bar-green';
+    if (v < 80) return 'bar-yellow';
+    return 'bar-red';
+  }
+  function makeBar(label, value, max) {
+    max = max || 100;
+    var pct = value != null ? Math.min(value, max) / max * 100 : 0;
+    var text = value != null ? value.toFixed(1) + '%' : '-';
+    return '<div class="flex items-center gap-2 min-w-0">'
+      + '<span class="text-gray-500 text-[11px] w-6 shrink-0">' + label + '</span>'
+      + '<div class="bar-track flex-1"><div class="bar-fill ' + barColor(value) + '" style="width:' + pct + '%"></div>'
+      + '<span class="bar-label">' + text + '</span></div></div>';
+  }
+
+  function loadMonitorOverview() {
+    fetch(_monitorApiBase + '/overview').then(function(r) { return r.json(); }).then(function(d) {
+      if (!d.ok) { document.getElementById('monitor-cards').innerHTML = '<div class="text-red-400 text-sm text-center py-8">' + (d.error || '加载失败') + '</div>'; return; }
+      renderOverviewCards(d.data);
+    }).catch(function() {
+      document.getElementById('monitor-cards').innerHTML = '<div class="text-red-400 text-sm text-center py-8">请求失败</div>';
+    });
+  }
+
+  function startAutoRefresh() {
+    clearInterval(_monitorRefreshTimer);
+    _monitorRefreshTimer = setInterval(loadMonitorOverview, REFRESH_INTERVAL);
+  }
+
+  function renderOverviewCards(nodes) {
+    var container = document.getElementById('monitor-cards');
+    if (!nodes || nodes.length === 0) {
+      container.innerHTML = '<div class="text-gray-500 text-sm text-center py-8">暂无节点数据</div>';
+      return;
+    }
+    var onlineCount = nodes.filter(function(n) { return n.online; }).length;
+    var statsEl = document.getElementById('monitor-stats');
+    if (statsEl) statsEl.textContent = onlineCount + '/' + nodes.length + ' 在线';
+
+    // 更新流量快照
+    var now = Date.now();
+    nodes.forEach(function(n) {
+      if (n.netTotalRx != null && n.netTotalTx != null) {
+        _trafficSnapshots[n.agentNodeId] = {
+          rx: n.netTotalRx, tx: n.netTotalTx,
+          rxRate: n.netRxRate || 0, txRate: n.netTxRate || 0,
+          ts: now
+        };
+      }
+    });
+
+    container.innerHTML = nodes.map(function(n) {
+      var dotClass = n.online ? 'online' : 'offline';
+      var rx = formatBandwidth(n.netRxRate);
+      var tx = formatBandwidth(n.netTxRate);
+      var up = formatUptime(n.uptime);
+      var load = n.loadAvg ? n.loadAvg.map(function(v) { return v != null ? v.toFixed(2) : '-'; }).join(' / ') : '-';
+      var totalRx = formatBytes(n.netTotalRx);
+      var totalTx = formatBytes(n.netTotalTx);
+      var protoBadges = (n.protocols || []).map(function(p) {
+        return '<span class="inline-block px-1.5 py-0.5 rounded text-[10px] bg-white/10 text-gray-400">' + escapeHtml(p) + '</span>';
+      }).join(' ');
+
+      return '<div class="node-card glass rounded-xl p-4 cursor-pointer" onclick="loadNodeDetail(' + n.agentNodeId + ',\'' + _currentMonitorRange + '\')">'
+        /* 顶部：名称 + 状态 + 协议 */
+        + '<div class="flex items-center justify-between mb-3">'
+        + '<div class="flex items-center gap-2 min-w-0">'
+        + '<span class="status-dot ' + dotClass + ' shrink-0"></span>'
+        + '<span class="text-white font-medium text-sm truncate">' + escapeHtml(n.displayName) + '</span>'
+        + (protoBadges ? '<span class="flex gap-1 shrink-0">' + protoBadges + '</span>' : '')
+        + '</div>'
+        + '<span class="text-gray-500 text-[11px] shrink-0 ml-2">' + up + '</span>'
+        + '</div>'
+        /* 中间：三个进度条 */
+        + '<div class="grid grid-cols-3 gap-3 mb-3">'
+        + makeBar('CPU', n.cpuUsage)
+        + makeBar('内存', n.memUsage)
+        + makeBar('磁盘', n.diskUsage)
+        + '</div>'
+        /* 底部：实时带宽 + 总流量 + 负载 */
+        + '<div class="flex items-center justify-between text-[11px] mb-2">'
+        + '<div class="flex items-center gap-3">'
+        + '<span class="text-gray-500">↓ <span class="text-cyan-400">' + rx + '</span></span>'
+        + '<span class="text-gray-500">↑ <span class="text-orange-400">' + tx + '</span></span>'
+        + '</div>'
+        + '<span class="text-gray-500">负载 <span class="text-gray-300">' + load + '</span></span>'
+        + '</div>'
+        + '<div class="flex items-center justify-between text-[11px] pt-2 border-t border-white/5">'
+        + '<span class="text-gray-500">总流量 ↓ <span class="text-cyan-300 traffic-rx" data-nid="' + n.agentNodeId + '">' + totalRx + '</span> ↑ <span class="text-orange-300 traffic-tx" data-nid="' + n.agentNodeId + '">' + totalTx + '</span></span>'
+        + '</div>'
+        + '</div>';
+    }).join('');
+
+    // 启动插值动画
+    startTrafficAnimation();
+  }
+
+  function loadNodeDetail(nodeId, range) {
+    clearInterval(_monitorRefreshTimer);
+    stopTrafficAnimation();
+    _currentMonitorNodeId = nodeId;
+    _currentMonitorRange = range || '1h';
+    document.getElementById('monitor-overview').style.display = 'none';
+    document.getElementById('monitor-detail').style.display = 'block';
+    document.querySelectorAll('.monitor-range-btn').forEach(function(b) {
+      var active = b.dataset.range === _currentMonitorRange;
+      b.classList.toggle('active', active);
+      b.style.color = active ? '#fff' : '';
+      b.style.background = active ? 'rgba(6,182,212,0.3)' : '';
+    });
+    fetch(_monitorApiBase + '/node/' + nodeId + '?range=' + _currentMonitorRange).then(function(r) { return r.json(); }).then(function(d) {
+      if (!d.ok) { document.getElementById('monitor-detail-status').innerHTML = '<div class="text-red-400 text-sm">' + (d.error || '加载失败') + '</div>'; return; }
+      renderNodeDetail(d.data);
+    }).catch(function() {
+      document.getElementById('monitor-detail-status').innerHTML = '<div class="text-red-400 text-sm">请求失败</div>';
+    });
+  }
+
+  function switchMonitorRange(range) { if (_currentMonitorNodeId) loadNodeDetail(_currentMonitorNodeId, range); }
+  function monitorBack() {
+    destroyCharts();
+    document.getElementById('monitor-detail').style.display = 'none';
+    document.getElementById('monitor-overview').style.display = 'block';
+    _currentMonitorNodeId = null;
+    loadMonitorOverview();
+    startAutoRefresh();
+  }
+  function destroyCharts() { Object.values(_monitorCharts).forEach(function(c) { try { c.destroy(); } catch(e) {} }); _monitorCharts = {}; }
+
+  // 流量数字插值动画：按当前速率模拟增长，让数字持续跳动
+  function startTrafficAnimation() {
+    if (_trafficAnimFrame) cancelAnimationFrame(_trafficAnimFrame);
+    function tick() {
+      var now = Date.now();
+      for (var nid in _trafficSnapshots) {
+        var snap = _trafficSnapshots[nid];
+        var dt = (now - snap.ts) / 1000; // 距离快照的秒数
+        var curRx = snap.rx + snap.rxRate * dt;
+        var curTx = snap.tx + snap.txRate * dt;
+        var rxEls = document.querySelectorAll('.traffic-rx[data-nid="' + nid + '"]');
+        var txEls = document.querySelectorAll('.traffic-tx[data-nid="' + nid + '"]');
+        for (var i = 0; i < rxEls.length; i++) rxEls[i].textContent = formatBytes(curRx);
+        for (var i = 0; i < txEls.length; i++) txEls[i].textContent = formatBytes(curTx);
+      }
+      _trafficAnimFrame = requestAnimationFrame(tick);
+    }
+    _trafficAnimFrame = requestAnimationFrame(tick);
+  }
+  function stopTrafficAnimation() {
+    if (_trafficAnimFrame) { cancelAnimationFrame(_trafficAnimFrame); _trafficAnimFrame = null; }
+  }
+
+  function renderNodeDetail(data) {
+    var node = data.node, online = data.online, history = data.history;
+    document.getElementById('monitor-detail-title').textContent = node.name + (node.region ? ' (' + node.region + ')' : '');
+    var statusHtml = '<div class="glass rounded-2xl p-4"><div class="grid grid-cols-2 sm:grid-cols-4 gap-4 text-xs">'
+      + '<div><span class="text-gray-500 block">状态</span><span class="' + (online ? 'text-green-400' : 'text-red-400') + '">' + (online ? '在线' : '离线') + '</span></div>'
+      + '</div></div>';
+    document.getElementById('monitor-detail-status').innerHTML = statusHtml;
+
+    var labels = history.map(function(m) { var d = new Date(m.recorded_at + 'Z'); return d.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' }); });
+    destroyCharts();
+    var chartOpts = {
+      responsive: true, maintainAspectRatio: false, animation: false,
+      interaction: { mode: 'index', intersect: false },
+      plugins: { legend: { display: false }, tooltip: { backgroundColor: 'rgba(0,0,0,0.8)', titleColor: '#fff', bodyColor: '#ccc' } },
+      scales: {
+        x: { ticks: { color: '#6b7280', maxTicksLimit: 8, maxRotation: 0 }, grid: { color: 'rgba(255,255,255,0.05)' } },
+        y: { ticks: { color: '#6b7280' }, grid: { color: 'rgba(255,255,255,0.05)' }, beginAtZero: true }
+      }
+    };
+
+    _monitorCharts.cpu = new Chart(document.getElementById('chart-cpu'), {
+      type: 'line', data: { labels: labels, datasets: [{ data: history.map(function(m){return m.cpu_usage}), borderColor: '#06b6d4', backgroundColor: 'rgba(6,182,212,0.1)', fill: true, tension: 0.3, pointRadius: 0, borderWidth: 1.5 }] },
+      options: Object.assign({}, chartOpts, { scales: Object.assign({}, chartOpts.scales, { y: Object.assign({}, chartOpts.scales.y, { max: 100 }) }) })
+    });
+    _monitorCharts.mem = new Chart(document.getElementById('chart-mem'), {
+      type: 'line', data: { labels: labels, datasets: [{ data: history.map(function(m){return m.mem_usage}), borderColor: '#8b5cf6', backgroundColor: 'rgba(139,92,246,0.1)', fill: true, tension: 0.3, pointRadius: 0, borderWidth: 1.5 }] },
+      options: Object.assign({}, chartOpts, { scales: Object.assign({}, chartOpts.scales, { y: Object.assign({}, chartOpts.scales.y, { max: 100 }) }) })
+    });
+    _monitorCharts.disk = new Chart(document.getElementById('chart-disk'), {
+      type: 'line', data: { labels: labels, datasets: [{ data: history.map(function(m){return m.disk_usage}), borderColor: '#eab308', backgroundColor: 'rgba(234,179,8,0.1)', fill: true, tension: 0.3, pointRadius: 0, borderWidth: 1.5 }] },
+      options: Object.assign({}, chartOpts, { scales: Object.assign({}, chartOpts.scales, { y: Object.assign({}, chartOpts.scales.y, { max: 100 }) }) })
+    });
+    _monitorCharts.net = new Chart(document.getElementById('chart-net'), {
+      type: 'line', data: { labels: labels, datasets: [
+        { label: '↓ 入站', data: history.map(function(m){return m.net_rx_rate}), borderColor: '#06b6d4', backgroundColor: 'rgba(6,182,212,0.1)', fill: true, tension: 0.3, pointRadius: 0, borderWidth: 1.5 },
+        { label: '↑ 出站', data: history.map(function(m){return m.net_tx_rate}), borderColor: '#f97316', backgroundColor: 'rgba(249,115,22,0.1)', fill: true, tension: 0.3, pointRadius: 0, borderWidth: 1.5 }
+      ] },
+      options: Object.assign({}, chartOpts, {
+        plugins: Object.assign({}, chartOpts.plugins, { legend: { display: true, labels: { color: '#9ca3af', boxWidth: 12, padding: 8 } },
+          tooltip: { backgroundColor: 'rgba(0,0,0,0.8)', titleColor: '#fff', bodyColor: '#ccc', callbacks: { label: function(ctx) { return ctx.dataset.label + ': ' + formatBandwidth(ctx.parsed.y); } } }
+        }),
+        scales: Object.assign({}, chartOpts.scales, { y: Object.assign({}, chartOpts.scales.y, { ticks: { color: '#6b7280', callback: function(v) { return formatBandwidth(v); } } }) })
+      })
+    });
+    _monitorCharts.load = new Chart(document.getElementById('chart-load'), {
+      type: 'line', data: { labels: labels, datasets: [
+        { label: '1分钟', data: history.map(function(m){return m.load_avg_1}), borderColor: '#22c55e', tension: 0.3, pointRadius: 0, borderWidth: 1.5 },
+        { label: '5分钟', data: history.map(function(m){return m.load_avg_5}), borderColor: '#3b82f6', tension: 0.3, pointRadius: 0, borderWidth: 1.5 },
+        { label: '15分钟', data: history.map(function(m){return m.load_avg_15}), borderColor: '#a855f7', tension: 0.3, pointRadius: 0, borderWidth: 1.5 }
+      ] },
+      options: Object.assign({}, chartOpts, { plugins: Object.assign({}, chartOpts.plugins, { legend: { display: true, labels: { color: '#9ca3af', boxWidth: 12, padding: 8 } } }) })
+    });
+  }
+
+  loadMonitorOverview();
+  startAutoRefresh();
+  </script>
+
+<%- include('partials/foot') %>

@@ -1,0 +1,24 @@
+# 依赖在镜像内重新安装编译
+node_modules/
+
+# 运行时数据：走持久卷，绝不打进镜像（你的 panel.db 已 700MB+）
+data/
+backups/
+*.log
+
+# 密钥与本地配置
+.env
+.env.*
+!.env.example
+
+# 版本控制与杂项
+.git/
+.gitignore
+*.md
+test/
+openclaw-ops/
+
+# 编辑器
+.vscode/
+.idea/
+.DS_Store

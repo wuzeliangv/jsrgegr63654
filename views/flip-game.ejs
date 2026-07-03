@@ -1,0 +1,141 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+<title>翻卡赢流量</title>
+<script src="https://telegram.org/js/telegram-web-app.js"></script>
+<style>
+:root{
+  --bg:#120b1d;
+  --bg2:#24113d;
+  --line:rgba(255,255,255,.08);
+  --text:#f8fafc;
+  --muted:#9eb1c7;
+  --gold:#f59e0b;
+  --cyan:#22d3ee;
+  --win:#34d399;
+  --lose:#fb7185;
+}
+*{margin:0;padding:0;box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+body{
+  min-height:100vh;
+  font-family:"SF Pro Display","Noto Sans SC","PingFang SC",system-ui,sans-serif;
+  color:var(--text);
+  background:
+    radial-gradient(circle at top left, rgba(245,158,11,.18), transparent 28%),
+    radial-gradient(circle at top right, rgba(34,211,238,.16), transparent 22%),
+    linear-gradient(160deg, var(--bg), var(--bg2));
+  overflow-x:hidden;
+  overflow-y:auto;
+}
+.shell{min-height:100vh;display:flex;justify-content:center;padding:14px}
+.board{
+  width:min(100%, 430px);
+  background:linear-gradient(180deg, rgba(255,255,255,.08), rgba(255,255,255,.03));
+  border:1px solid var(--line);
+  border-radius:28px;
+  overflow:hidden;
+  backdrop-filter:blur(16px);
+  box-shadow:0 24px 80px rgba(0,0,0,.36);
+}
+.hero{padding:14px 16px 10px}
+.eyebrow{
+  display:inline-flex;align-items:center;gap:8px;
+  padding:7px 10px;border-radius:999px;
+  background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.08);
+  font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:#f8e6b6;
+}
+.eyebrow-dot{width:7px;height:7px;border-radius:50%;background:linear-gradient(135deg,var(--gold),#fde68a);box-shadow:0 0 14px rgba(245,158,11,.8)}
+.title{margin-top:10px;font-size:28px;font-weight:800}
+.subtitle{margin-top:6px;font-size:13px;color:var(--muted)}
+.stats{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-top:14px}
+.stat{padding:10px 8px;border-radius:16px;background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.08);text-align:center}
+.stat-k{font-size:11px;color:var(--muted)}
+.stat-v{margin-top:4px;font-size:18px;font-weight:800}
+.panel{margin:0 16px 10px;padding:12px 14px;border-radius:20px;background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.06)}
+.panel-k{font-size:11px;color:var(--muted)}
+.panel-v{margin-top:6px;font-size:14px;line-height:1.5}
+.result{margin:0 16px 10px;padding:14px 16px;border-radius:20px;background:linear-gradient(180deg, rgba(255,255,255,.08), rgba(255,255,255,.03));border:1px solid rgba(255,255,255,.08)}
+.result-tag{font-size:11px;letter-spacing:.12em;text-transform:uppercase;color:#d4d9ff}
+.result-title{margin-top:8px;font-size:22px;font-weight:800}
+.result-sub{margin-top:4px;font-size:13px;color:var(--muted);min-height:18px}
+.grid{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;padding:0 16px 16px}
+.card{
+  position:relative;
+  min-height:108px;
+  border-radius:20px;
+  border:1px solid rgba(255,255,255,.08);
+  background:linear-gradient(160deg, rgba(255,255,255,.08), rgba(255,255,255,.03));
+  color:var(--text);
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  flex-direction:column;
+  cursor:pointer;
+  transition:transform .18s ease, opacity .18s ease, border-color .18s ease;
+  overflow:hidden;
+}
+.card:hover{transform:translateY(-2px)}
+.card:active{transform:scale(.97)}
+.card.disabled{pointer-events:none;opacity:.5}
+.card.revealed{border-color:rgba(245,158,11,.42)}
+.card-face{font-size:26px;font-weight:800;text-align:center;padding:0 10px}
+.card-prize{margin-top:8px;font-size:12px;color:#eef4ff;text-align:center;line-height:1.35;padding:0 8px}
+.card-back{
+  position:absolute;inset:0;
+  display:flex;align-items:center;justify-content:center;flex-direction:column;
+  background:
+    radial-gradient(circle at top, rgba(34,211,238,.16), transparent 28%),
+    radial-gradient(circle at bottom, rgba(245,158,11,.16), transparent 28%),
+    linear-gradient(160deg, rgba(37,24,70,.92), rgba(22,15,41,.95));
+}
+.card-back-icon{font-size:30px}
+.card-back-label{margin-top:8px;font-size:12px;color:#d7def6}
+.flash-win{box-shadow:0 0 0 1px rgba(52,211,153,.32),0 0 26px rgba(52,211,153,.28)}
+.flash-lose{box-shadow:0 0 0 1px rgba(251,113,133,.28),0 0 26px rgba(251,113,133,.22)}
+.ghost-reveal{border-color:rgba(148,163,184,.26)}
+</style>
+</head>
+<body>
+<div class="shell">
+  <div class="board">
+    <div class="hero">
+      <div class="eyebrow"><span class="eyebrow-dot"></span>Lucky Flip</div>
+      <div class="title">翻卡赢流量</div>
+      <div class="subtitle">每天 3 次，9 张卡任选。翻开之前没人知道里面是什么。</div>
+      <div class="stats">
+        <div class="stat"><div class="stat-k">今日次数</div><div class="stat-v">3</div></div>
+        <div class="stat"><div class="stat-k">最高奖励</div><div class="stat-v">+2GB</div></div>
+        <div class="stat"><div class="stat-k">最差结果</div><div class="stat-v">-0.5GB</div></div>
+      </div>
+    </div>
+
+    <div class="panel">
+      <div class="panel-k">本局状态</div>
+      <div class="panel-v" id="status-text">正在读取今日翻卡状态...</div>
+    </div>
+
+    <div class="result">
+      <div class="result-tag">Card Result</div>
+      <div class="result-title" id="result-title">选一张卡开始</div>
+      <div class="result-sub" id="result-sub">翻开后会立即结算流量奖励。</div>
+    </div>
+
+    <div class="grid" id="card-grid">
+      <% for (let i = 1; i <= 9; i++) { %>
+        <button class="card" type="button" data-index="<%= i - 1 %>">
+          <div class="card-back">
+            <div class="card-back-icon">📶</div>
+            <div class="card-back-label">流量盲盒</div>
+          </div>
+          <div class="card-face">?</div>
+          <div class="card-prize"></div>
+        </button>
+      <% } %>
+    </div>
+  </div>
+</div>
+<script src="/js/flip.js"></script>
+</body>
+</html>

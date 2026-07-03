@@ -1,0 +1,643 @@
+<%- include('partials/head', { title: '节点面板' }) %>
+
+  <!-- 导航 -->
+  <nav class="glass-solid sticky top-0 z-40 px-6 py-3">
+    <div class="max-w-6xl mx-auto flex items-center justify-between">
+      <div class="flex items-center gap-3">
+        <div class="w-8 h-8 rounded-lg bg-gradient-to-br from-rose-500 to-orange-500 flex items-center justify-center text-sm">🍑</div>
+        <span class="text-white font-semibold hidden sm:block">大姨子的诱惑</span>
+      </div>
+      <div class="flex items-center gap-3">
+        <button id="btn-exchange" class="text-xs px-3 py-1.5 rounded-full bg-emerald-500/20 text-emerald-300 hover:bg-emerald-500/30 transition" style="display:none">兑换</button>
+        <span class="text-gray-300 text-sm hidden sm:block"><%= user.name || user.username %><% if (userGroup.badge) { %> <span style="background:#b8860b;color:#fff;padding:1px 6px;border-radius:5px;font-size:11px"><%= userGroup.badge %> <%= userGroup.name %></span><% } %></span>
+        <% if (tgBotEnabled) { %><% if (tgBound) { %><svg style="display:inline;vertical-align:middle;width:16px;height:16px" viewBox="0 0 24 24" fill="#29B6F6"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-1.41 14.59L6 12l1.41-1.41L10.59 13.76l6-6L18 9.17l-7.41 7.42z"/></svg><% } else { %><button id="btn-tg-bind" title="绑定 Telegram" style="background:none;border:none;cursor:pointer;padding:0 2px;vertical-align:middle"><svg style="width:16px;height:16px" viewBox="0 0 24 24" fill="#999"><path d="M11.944 0A12 12 0 0 0 0 12a12 12 0 0 0 12 12 12 12 0 0 0 12-12A12 12 0 0 0 12 0h-.056zm4.962 7.224c.1-.002.321.023.465.14a.506.506 0 0 1 .171.325c.016.093.036.306.02.472-.18 1.898-.962 6.502-1.36 8.627-.168.9-.499 1.201-.82 1.23-.696.065-1.225-.46-1.9-.902-1.056-.693-1.653-1.124-2.678-1.8-1.185-.78-.417-1.21.258-1.91.177-.184 3.247-2.977 3.307-3.23.007-.032.014-.15-.056-.212s-.174-.041-.249-.024c-.106.024-1.793 1.14-5.061 3.345-.479.33-.913.49-1.302.48-.428-.008-1.252-.241-1.865-.44-.752-.245-1.349-.374-1.297-.789.027-.216.325-.437.893-.663 3.498-1.524 5.83-2.529 6.998-3.014 3.332-1.386 4.025-1.627 4.476-1.635z"/></svg></button><% } %><% } %>
+        <a href="/monitor" class="text-xs px-3 py-1.5 rounded-full bg-cyan-500/20 text-cyan-300 hover:bg-cyan-500/30 transition">📡 探针</a>
+        <% if (user.is_admin) { %><a href="/admin" class="text-xs px-3 py-1.5 rounded-full bg-amber-500/20 text-amber-300 hover:bg-amber-500/30 transition">管理</a><% } %>
+        <a href="/auth/logout" class="text-xs px-3 py-1.5 rounded-full glass text-gray-300 hover:text-red-400 transition">退出</a>
+      </div>
+    </div>
+  </nav>
+
+  <% if (announcement) { %>
+  <div class="max-w-6xl mx-auto px-4 sm:px-6 mt-4">
+    <div class="bg-rose-500/10 border border-rose-500/20 rounded-2xl">
+      <div class="px-4 py-2 flex items-center gap-2 text-xs">
+        <span class="text-rose-400 shrink-0">📢</span>
+        <div class="marquee-wrap">
+          <span class="animate-marquee text-rose-200/80"><%= announcement %></span>
+        </div>
+      </div>
+    </div>
+  </div>
+  <% } %>
+
+  <% if (tgBotEnabled && !tgBound) { %>
+  <div class="max-w-6xl mx-auto px-4 sm:px-6 mt-4">
+    <div id="tg-bind-banner" class="relative overflow-hidden rounded-2xl" style="background:linear-gradient(135deg,#0f2027,#203a43,#2c5364);border:1px solid rgba(34,211,238,0.45);box-shadow:0 8px 24px rgba(8,40,60,0.45)">
+      <div class="flex items-center justify-between" style="padding:18px 20px;gap:16px">
+        <div class="flex items-center" style="gap:14px">
+          <svg style="width:38px;height:38px;flex-shrink:0" viewBox="0 0 24 24" fill="#29B6F6"><path d="M11.944 0A12 12 0 0 0 0 12a12 12 0 0 0 12 12 12 12 0 0 0 12-12A12 12 0 0 0 12 0h-.056zm4.962 7.224c.1-.002.321.023.465.14a.506.506 0 0 1 .171.325c.016.093.036.306.02.472-.18 1.898-.962 6.502-1.36 8.627-.168.9-.499 1.201-.82 1.23-.696.065-1.225-.46-1.9-.902-1.056-.693-1.653-1.124-2.678-1.8-1.185-.78-.417-1.21.258-1.91.177-.184 3.247-2.977 3.307-3.23.007-.032.014-.15-.056-.212s-.174-.041-.249-.024c-.106.024-1.793 1.14-5.061 3.345-.479.33-.913.49-1.302.48-.428-.008-1.252-.241-1.865-.44-.752-.245-1.349-.374-1.297-.789.027-.216.325-.437.893-.663 3.498-1.524 5.83-2.529 6.998-3.014 3.332-1.386 4.025-1.627 4.476-1.635z"/></svg>
+          <div>
+            <div style="color:#ffffff;font-size:17px;font-weight:700;line-height:1.4">🎁 绑定 Telegram，立即到账 <span style="color:#fcd34d;font-weight:800"><%= tgBindGiftLabel %></span> 流量</div>
+            <div style="color:rgba(207,250,254,0.92);font-size:13px;margin-top:5px">每日签到领种子 · 农场种菜收流量 · 随时查流量与订阅</div>
+            <div style="display:inline-block;margin-top:8px;padding:3px 9px;border-radius:7px;background:rgba(251,191,36,0.16);border:1px solid rgba(251,191,36,0.45);color:#fde68a;font-size:12.5px;font-weight:600">⚠️ 注册后 7 天内未绑定将自动删除账号</div>
+          </div>
+        </div>
+        <button id="btn-tg-bind-banner" class="shrink-0 rounded-full transition" style="padding:11px 22px;font-size:15px;font-weight:700;color:#fff;background:linear-gradient(135deg,#29B6F6,#0288D1);box-shadow:0 6px 18px rgba(41,182,246,0.4);white-space:nowrap">立即绑定</button>
+      </div>
+    </div>
+  </div>
+  <% } %>
+
+  <main class="max-w-6xl mx-auto px-4 sm:px-6 py-6 space-y-6">
+
+    <!-- 流量概览 -->
+    <div class="grid grid-cols-2 md:grid-cols-4 gap-3">
+      <div class="glass rounded-2xl p-4 stat-card" style="--accent-color:#f43f5e">
+        <p class="text-gray-500 text-xs mb-1">节点在线用户</p>
+        <p class="text-rose-400 text-lg font-bold" id="online-count">0 人</p>
+      </div>
+      <div class="glass rounded-2xl p-4 stat-card" style="--accent-color:#8b5cf6">
+        <p class="text-gray-500 text-xs mb-1">全站已用</p>
+        <p class="text-violet-400 text-lg font-bold" id="global-traffic"><%= formatBytes(globalTraffic.total_up + globalTraffic.total_down) %></p>
+      </div>
+      <div class="glass rounded-2xl p-4 stat-card" style="--accent-color:#fb923c">
+        <p class="text-gray-500 text-xs mb-1">已用流量</p>
+        <p class="text-orange-400 text-lg font-bold" id="used-traffic"><%= formatBytes(traffic.total_up + traffic.total_down) %></p>
+      </div>
+      <div class="glass rounded-2xl p-4 stat-card" style="--accent-color:#06b6d4">
+        <p class="text-gray-500 text-xs mb-1"><%= expiresAt ? '剩余流量 / 到期' : '剩余流量' %></p>
+        <p class="text-cyan-400 text-lg font-bold" id="remaining-traffic">
+          <%= trafficLimit >= 0 ? formatBytes(Math.max(0, trafficLimit - traffic.total_up - traffic.total_down)) : '∞' %>
+          <% if (expiresAt) { %>
+            <% const _daysLeft = Math.ceil((new Date(expiresAt).getTime() - Date.now()) / 86400000); %>
+            <span class="text-xs <%= _daysLeft <= 3 ? 'text-red-400' : 'text-gray-500' %> ml-1">· <%= _daysLeft > 0 ? _daysLeft + '天' : '已过期' %></span>
+          <% } %>
+        </p>
+      </div>
+    </div>
+
+    <% if (inviteEnabled) { %>
+    <div class="glass rounded-2xl p-5">
+      <div class="flex items-center justify-between gap-3 flex-wrap mb-3">
+        <div>
+          <h2 class="text-white font-semibold text-sm">邀请码</h2>
+          <p class="text-gray-500 text-xs mt-1">仅 VIP 及以上等级可生成邀请码，每位用户每周可生成 1 个，生成后 7 天内有效</p>
+        </div>
+        <button id="btn-generate-invite" class="bg-emerald-600 hover:bg-emerald-500 disabled:bg-gray-700 disabled:text-gray-400 text-white px-4 py-2.5 rounded-xl text-sm transition font-medium" <%= canGenerateInvite ? '' : 'disabled' %>>生成邀请码</button>
+      </div>
+      <div id="invite-code-card" class="rounded-xl border border-white/8 bg-black/20 p-4">
+        <% if (activeInvite) { %>
+          <div class="flex items-center justify-between gap-3 flex-wrap">
+            <div>
+              <div class="text-gray-400 text-[11px] mb-1">当前邀请码</div>
+              <div id="invite-code-value" class="text-emerald-300 text-lg font-mono tracking-[0.25em]"><%= activeInvite.code %></div>
+            </div>
+            <button id="btn-copy-invite" class="bg-white/8 hover:bg-white/12 text-white px-4 py-2 rounded-xl text-sm transition">复制</button>
+          </div>
+          <p id="invite-code-expiry" class="text-gray-500 text-xs mt-3">有效至 <%= formatDateTimeInTimeZone(activeInvite.expires_at, 'Asia/Shanghai', true) %>（上海时间）</p>
+        <% } else { %>
+          <div id="invite-code-empty" class="text-gray-500 text-sm">当前没有可用邀请码</div>
+          <div id="invite-code-generated" class="hidden">
+            <div class="flex items-center justify-between gap-3 flex-wrap">
+              <div>
+                <div class="text-gray-400 text-[11px] mb-1">当前邀请码</div>
+                <div id="invite-code-value" class="text-emerald-300 text-lg font-mono tracking-[0.25em]"></div>
+              </div>
+              <button id="btn-copy-invite" class="bg-white/8 hover:bg-white/12 text-white px-4 py-2 rounded-xl text-sm transition">复制</button>
+            </div>
+            <p id="invite-code-expiry" class="text-gray-500 text-xs mt-3"></p>
+          </div>
+        <% } %>
+        <p id="invite-next-generate" class="text-gray-500 text-xs mt-3">
+          <% if (!canUseInviteFeature) { %>
+            当前用户组为 <span class="text-cyan-300"><%= userGroupLabel %></span>，仅 VIP 及以上等级可生成邀请码
+          <% } else if (canGenerateInvite) { %>
+            现在可以生成新的邀请码
+          <% } else { %>
+            下次可生成时间：<span class="text-cyan-300"><%= formatDateTimeInTimeZone(nextInviteGenerateAt, 'Asia/Shanghai', true) %></span>
+            <span class="text-gray-600">·</span>
+            <span id="invite-generate-countdown" class="text-amber-300">计算中...</span>
+          <% } %>
+        </p>
+      </div>
+    </div>
+    <% } %>
+
+    <!-- 订阅链接 -->
+    <div class="glass rounded-2xl p-5">
+      <% const _launchDate = new Date('2026-03-10T00:00:00+09:00'); const _runDays = Math.floor((Date.now() - _launchDate.getTime()) / 86400000); %>
+      <div class="flex items-center justify-between mb-3 flex-wrap gap-1.5">
+        <div class="flex items-center gap-2 text-[11px]">
+          <h2 class="text-white font-semibold text-sm">📡 个人订阅</h2>
+          <span class="text-gray-600">🍑 已运行 <span class="text-gray-400"><%= _runDays %></span> 天 · <span style="background:#b8860b;color:#fff;padding:1px 6px;border-radius:5px;font-size:11px"><%= userGroupLabel %></span></span>
+        </div>
+        <div class="text-[11px] text-gray-400">
+          UUID 重置：<span id="uuid-reset-countdown" class="text-rose-300">计算中...</span> <span class="text-gray-600">(<%= uuidResetLabel %>)</span> · 订阅重置：<span id="sub-reset-countdown" class="text-cyan-300">计算中...</span> <span class="text-gray-600">(<%= subResetLabel %>)</span>
+        </div>
+      </div>
+      <div class="space-y-2">
+        <% if (subVisibleVless) { %>
+        <div>
+          <div class="text-[11px] text-gray-400 mb-1">🌐 IPv4 订阅（VLESS）</div>
+          <div class="flex flex-wrap gap-2 sub-btn-row">
+            <input type="text" readonly value="<%= subUrl %>" id="sub-link"
+                   class="flex-1 min-w-0 bg-black/30 text-rose-300 text-xs px-4 py-2.5 rounded-xl border border-white/5 font-mono">
+            <button id="btn-copy-sub" class="bg-rose-600 hover:bg-rose-500 text-white px-5 py-2.5 rounded-xl text-sm transition font-medium">复制</button>
+            <button id="btn-show-sub-qr" class="bg-indigo-600 hover:bg-indigo-500 text-white px-5 py-2.5 rounded-xl text-sm transition font-medium">二维码</button>
+          </div>
+        </div>
+        <% } %>
+        <% if (subVisibleSs) { %>
+        <div>
+          <div class="text-[11px] text-gray-400 mb-1">🌐 IPv6 订阅（Shadowsocks）</div>
+          <div class="flex flex-wrap gap-2 sub-btn-row">
+            <input type="text" readonly value="<%= subUrl6 %>" id="sub6-link"
+                   class="flex-1 min-w-0 bg-black/30 text-cyan-300 text-xs px-4 py-2.5 rounded-xl border border-white/5 font-mono">
+            <button id="btn-copy-sub6" class="bg-rose-600 hover:bg-rose-500 text-white px-5 py-2.5 rounded-xl text-sm transition font-medium">复制</button>
+            <button id="btn-show-sub6-qr" class="bg-indigo-600 hover:bg-indigo-500 text-white px-5 py-2.5 rounded-xl text-sm transition font-medium">二维码</button>
+          </div>
+        </div>
+        <% } %>
+        <% if (subVisibleHy2) { %>
+        <div>
+          <div class="text-[11px] text-gray-400 mb-1">⚡ Hy2 订阅（Hysteria 2）</div>
+          <div class="flex flex-wrap gap-2 sub-btn-row">
+            <input type="text" readonly value="<%= subHy2Url %>" id="subhy2-link"
+                   class="flex-1 min-w-0 bg-black/30 text-amber-300 text-xs px-4 py-2.5 rounded-xl border border-white/5 font-mono">
+            <button id="btn-copy-subhy2" class="bg-rose-600 hover:bg-rose-500 text-white px-5 py-2.5 rounded-xl text-sm transition font-medium">复制</button>
+            <button id="btn-show-subhy2-qr" class="bg-indigo-600 hover:bg-indigo-500 text-white px-5 py-2.5 rounded-xl text-sm transition font-medium">二维码</button>
+          </div>
+        </div>
+        <% } %>
+        <% if (subVisibleVless && subVisibleHy2) { %>
+        <div>
+          <div class="text-[11px] text-gray-400 mb-1">🎯 组合订阅（VLESS + Hy2）</div>
+          <div class="flex flex-wrap gap-2 sub-btn-row">
+            <input type="text" readonly value="<%= subAllUrl %>" id="suball-link"
+                   class="flex-1 min-w-0 bg-black/30 text-emerald-300 text-xs px-4 py-2.5 rounded-xl border border-white/5 font-mono">
+            <button id="btn-copy-suball" class="bg-rose-600 hover:bg-rose-500 text-white px-5 py-2.5 rounded-xl text-sm transition font-medium">复制</button>
+            <button id="btn-show-suball-qr" class="bg-indigo-600 hover:bg-indigo-500 text-white px-5 py-2.5 rounded-xl text-sm transition font-medium">二维码</button>
+          </div>
+        </div>
+        <% } %>
+      </div>
+      <div class="pt-3 mt-2 border-t border-white/5">
+        <button id="btn-reset-sub" style="width:100%;background:#e11d48;color:#fff;border:none;padding:11px 16px;border-radius:12px;font-size:14px;font-weight:600;cursor:pointer;transition:background .2s">重置订阅链接与节点凭据</button>
+        <p class="text-[11px] text-gray-500 mt-1.5 text-center leading-relaxed">怀疑链接泄露/被盗用时使用。重置后旧链接和所有设备上的配置会立即失效，需重新复制导入；通常数秒内全节点生效（每天限重置一次）。</p>
+      </div>
+    </div>
+    <div id="reset-confirm-modal" class="fixed inset-0 z-50 hidden items-center justify-center bg-black/70 backdrop-blur-sm">
+      <div class="glass-solid rounded-2xl p-5 w-[92%] max-w-sm border border-white/10">
+        <h3 class="text-white font-semibold text-sm mb-2">⚠️ 重置订阅链接与节点凭据</h3>
+        <p class="text-gray-300 text-xs leading-relaxed mb-4">重置后，旧的订阅链接和所有设备上的现有配置将立即失效，需要重新复制导入新链接。每天仅可重置一次，确定继续吗？</p>
+        <div class="flex gap-2 justify-end">
+          <button id="reset-cancel" style="background:rgba(255,255,255,0.08);color:#e5e7eb;border:none;padding:9px 18px;border-radius:10px;font-size:13px;cursor:pointer">取消</button>
+          <button id="reset-confirm" style="background:#e11d48;color:#fff;border:none;padding:9px 18px;border-radius:10px;font-size:13px;font-weight:600;cursor:pointer">确定重置</button>
+        </div>
+      </div>
+    </div>
+    <div id="sub-qr-modal" class="fixed inset-0 z-50 hidden items-center justify-center bg-black/70 backdrop-blur-sm">
+      <div class="glass-solid rounded-2xl p-5 w-[92%] max-w-sm border border-white/10">
+        <div class="flex items-center justify-between mb-3">
+          <h3 class="text-white font-semibold text-sm">📱 扫码添加订阅</h3>
+          <button id="btn-hide-sub-qr" class="text-gray-400 hover:text-white text-lg leading-none">✕</button>
+        </div>
+        <p class="text-gray-400 text-xs mb-3">用手机客户端扫码即可导入当前账号订阅链接</p>
+        <div class="bg-white rounded-xl p-3 mx-auto w-fit mb-3">
+          <img id="sub-qr-img" alt="订阅二维码" class="w-[220px] h-[220px] block" />
+        </div>
+        <p class="text-[11px] text-gray-500 break-all font-mono select-all" id="sub-qr-text"></p>
+      </div>
+    </div>
+    <!-- 节点列表（按分组展示） -->
+    <div>
+      <div class="flex items-center justify-between mb-3 gap-2">
+        <h2 class="text-white font-semibold">🌐 可用节点</h2>
+        <div class="flex items-center gap-2">
+          <span class="text-gray-600 text-xs"><%= userNodes.length %> 个节点</span>
+        </div>
+      </div>
+      <div class="mb-3">
+        <input id="node-search" type="text" placeholder="搜索节点名 / 地区 / 协议 (vless/ss)..." class="w-full bg-black/30 text-white px-3 py-2 rounded-xl border border-white/10 text-sm" />
+      </div>
+      <%
+        // 按 group_name 分组
+        const _groups = {};
+        userNodes.forEach(n => {
+          const g = n.group_name || '🍑 小姨子';
+          if (!_groups[g]) _groups[g] = [];
+          _groups[g].push(n);
+        });
+        const _groupNames = Object.keys(_groups).sort((a, b) => {
+          const order = ['小姨子'];
+          const ai = order.indexOf(a) === -1 ? 99 : order.indexOf(a);
+          const bi = order.indexOf(b) === -1 ? 99 : order.indexOf(b);
+          return ai - bi || a.localeCompare(b);
+        });
+      %>
+      <% _groupNames.forEach(gName => { %>
+        <% if (_groupNames.length > 1) { %>
+        <h3 class="text-gray-400 text-sm font-medium mb-2 mt-4 flex items-center gap-1.5">
+          <span class="w-1 h-4 rounded-full bg-rose-500/50"></span> <%= gName %>
+          <span class="text-gray-600 text-xs">(<%= _groups[gName].length %>)</span>
+        </h3>
+        <% } %>
+      <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3 node-card-grid mb-3">
+        <% if (userNodes.length === 0 && gName === _groupNames[0]) { %>
+          <div class="glass rounded-2xl p-8 col-span-full text-center">
+            <p class="text-gray-500">暂无可用节点</p>
+          </div>
+        <% } else { _groups[gName].forEach(function(n) { %>
+          <div class="glass rounded-2xl p-4 node-card" data-protocol="<%= (n.protocol || '').toLowerCase() %>" data-search="<%= (n.name || '') + ' ' + (n.region || '') + ' ' + (n.protocol || '') + ' ' + (n.tags || '') %>">
+            <div class="flex items-center justify-between mb-2.5">
+              <div class="flex items-center gap-2 min-w-0">
+                <% if (n.remark && n.remark.includes('被墙')) { %>
+                  <span class="shrink-0 inline-block w-2.5 h-2.5 rounded-full bg-red-500 shadow-[0_0_6px_rgba(239,68,68,0.6)]" title="被墙"></span>
+                <% } else if (n.remark && n.remark.includes('离线')) { %>
+                  <span class="shrink-0 inline-block w-2.5 h-2.5 rounded-full bg-red-500 shadow-[0_0_6px_rgba(239,68,68,0.6)]" title="离线"></span>
+                <% } else if (n.is_active) { %>
+                  <span class="shrink-0 inline-block w-2.5 h-2.5 rounded-full bg-emerald-400 shadow-[0_0_6px_rgba(52,211,153,0.6)]" title="在线"></span>
+                <% } else { %>
+                  <span class="shrink-0 inline-block w-2.5 h-2.5 rounded-full bg-yellow-400 shadow-[0_0_6px_rgba(250,204,21,0.6)]" title="检测中"></span>
+                <% } %>
+                <h3 class="text-white font-semibold text-sm truncate"><%= n.name %></h3>
+              </div>
+              <div class="flex items-center gap-1.5 shrink-0">
+                <% if (nodeAiTags[n.id] && nodeAiTags[n.id].includes('ai_swap')) { %>
+                  <span class="text-[9px] px-1.5 py-0.5 rounded-full bg-amber-500/20 text-amber-300 whitespace-nowrap">🔄 AI换IP</span>
+                <% } %>
+              </div>
+            </div>
+            <% if (n.region) { %><p class="text-gray-400 text-xs mb-3"><%= n.region %><% if (n.tags) { %> · <span class="text-gray-500 text-[11px]"><%= n.tags %></span><% } %></p><% } %>
+            <div class="bg-black/30 rounded-lg p-2.5 mb-2.5 overflow-hidden">
+              <code class="text-rose-300 text-[11px] break-all select-all font-mono vless-link leading-relaxed block max-h-20 overflow-y-auto" id="link-<%= n.id %>"><%= n.link %></code>
+            </div>
+            <button data-copy-link-id="<%= n.id %>" class="w-full bg-rose-600/80 hover:bg-rose-500 focus-visible:ring-2 focus-visible:ring-rose-400 focus-visible:outline-none text-white text-xs py-2.5 rounded-lg transition font-medium">复制链接</button>
+          </div>
+        <% }); } %>
+      </div>
+      <% }); %>
+    </div>
+  </main>
+
+  <script nonce="<%= nonce %>">
+    function copyLink(id) {
+      navigator.clipboard.writeText(document.getElementById('link-' + id).textContent).then(() => toast('✅ 链接已复制'));
+    }
+    function copySubLink() {
+      navigator.clipboard.writeText(document.getElementById('sub-link').value).then(() => toast('✅ 订阅链接已复制'));
+    }
+    function showSubQr() {
+      const link = document.getElementById('sub-link').value;
+      const modal = document.getElementById('sub-qr-modal');
+      const img = document.getElementById('sub-qr-img');
+      document.getElementById('sub-qr-text').textContent = link;
+      img.src = '/sub-qr?t=' + Date.now();
+      modal.classList.remove('hidden');
+      modal.classList.add('flex');
+    }
+    function hideSubQr() {
+      const modal = document.getElementById('sub-qr-modal');
+      modal.classList.remove('flex');
+      modal.classList.add('hidden');
+    }
+    function formatInviteDate(isoLike) {
+      if (!isoLike) return '';
+      const d = new Date(String(isoLike).replace(' ', 'T') + 'Z');
+      if (Number.isNaN(d.getTime())) return '';
+      return new Intl.DateTimeFormat('zh-CN', {
+        timeZone: 'Asia/Shanghai',
+        year: 'numeric',
+        month: '2-digit',
+        day: '2-digit',
+        hour: '2-digit',
+        minute: '2-digit',
+        second: '2-digit',
+        hour12: false,
+      }).format(d);
+    }
+    function renderInvite(invite) {
+      const empty = document.getElementById('invite-code-empty');
+      const generated = document.getElementById('invite-code-generated');
+      const value = document.getElementById('invite-code-value');
+      const expiry = document.getElementById('invite-code-expiry');
+      if (!value || !expiry) return;
+      if (empty) empty.classList.add('hidden');
+      if (generated) generated.classList.remove('hidden');
+      value.textContent = invite.code || '';
+      expiry.textContent = '有效至 ' + formatInviteDate(invite.expires_at) + '（上海时间）';
+    }
+    async function generateInviteCode() {
+      const btn = document.getElementById('btn-generate-invite');
+      if (!btn) return;
+      btn.disabled = true;
+      const prevText = btn.textContent;
+      btn.textContent = '生成中...';
+      try {
+        const res = await fetch('/auth/generate-invite-code', {
+          method: 'POST',
+          headers: { 'X-CSRF-Token': '<%= typeof csrfToken !== "undefined" ? csrfToken : "" %>' }
+        });
+        const data = await res.json();
+        if (data.ok && data.invite) {
+          renderInvite(data.invite);
+          const nextEl = document.getElementById('invite-next-generate');
+          if (nextEl && data.nextGenerateAt) {
+            nextEl.innerHTML = '下次可生成时间：<span class="text-cyan-300">' + formatInviteDate(data.nextGenerateAt) + '</span> <span class="text-gray-600">·</span> <span id="invite-generate-countdown" class="text-amber-300">计算中...</span>';
+          }
+          window._nextInviteGenerateAt = data.nextGenerateAt ? new Date(String(data.nextGenerateAt).replace(' ', 'T') + 'Z').getTime() : 0;
+          btn.disabled = true;
+          toast('✅ 邀请码已生成');
+          tickInviteCountdown();
+          return;
+        }
+        if (data.invite) renderInvite(data.invite);
+        if (data.nextGenerateAt) {
+          window._nextInviteGenerateAt = new Date(String(data.nextGenerateAt).replace(' ', 'T') + 'Z').getTime();
+          tickInviteCountdown();
+        }
+        toast(data.error || '生成失败', 2500, 'error');
+      } catch (_) {
+        toast('生成邀请码失败', 2500, 'error');
+      } finally {
+        btn.disabled = !!window._nextInviteGenerateAt;
+        btn.textContent = prevText;
+      }
+    }
+    function copyInviteCode() {
+      const value = document.getElementById('invite-code-value');
+      if (!value || !value.textContent.trim()) return;
+      navigator.clipboard.writeText(value.textContent.trim()).then(() => toast('✅ 邀请码已复制'));
+    }
+    const nextInviteGenerateAt = <%- JSON.stringify(nextInviteGenerateAt || null) %>;
+    window._nextInviteGenerateAt = nextInviteGenerateAt ? new Date(String(nextInviteGenerateAt).replace(' ', 'T') + 'Z').getTime() : 0;
+    function tickInviteCountdown() {
+      const countdownEl = document.getElementById('invite-generate-countdown');
+      const nextEl = document.getElementById('invite-next-generate');
+      const btn = document.getElementById('btn-generate-invite');
+      const canUseInviteFeature = <%- JSON.stringify(!!canUseInviteFeature) %>;
+      if (!canUseInviteFeature) {
+        if (btn) btn.disabled = true;
+        return;
+      }
+      if (!window._nextInviteGenerateAt) {
+        if (nextEl) nextEl.textContent = '现在可以生成新的邀请码';
+        if (btn) btn.disabled = false;
+        return;
+      }
+      if (!countdownEl) return;
+      const diff = window._nextInviteGenerateAt - Date.now();
+      if (diff <= 0) {
+        if (nextEl) nextEl.textContent = '现在可以生成新的邀请码';
+        if (btn) btn.disabled = false;
+        window._nextInviteGenerateAt = 0;
+        return;
+      }
+      countdownEl.textContent = '倒计时 ' + fmtCountdown(diff);
+      if (btn) btn.disabled = true;
+    }
+    function copySub6Link() {
+      navigator.clipboard.writeText(document.getElementById('sub6-link').value).then(() => toast('✅ IPv6 订阅链接已复制'));
+    }
+    function copySubHy2Link() {
+      navigator.clipboard.writeText(document.getElementById('subhy2-link').value).then(() => toast('✅ Hy2 订阅链接已复制'));
+    }
+    function showSub6Qr() {
+      const link = document.getElementById('sub6-link').value;
+      const modal = document.getElementById('sub-qr-modal');
+      const img = document.getElementById('sub-qr-img');
+      document.getElementById('sub-qr-text').textContent = link;
+      // 用通用 QR 生成（复用同一弹窗，动态生成二维码）
+      img.src = '/sub6-qr?t=' + Date.now();
+      modal.classList.remove('hidden');
+      modal.classList.add('flex');
+    }
+    function showSubHy2Qr() {
+      const link = document.getElementById('subhy2-link').value;
+      const modal = document.getElementById('sub-qr-modal');
+      const img = document.getElementById('sub-qr-img');
+      document.getElementById('sub-qr-text').textContent = link;
+      img.src = '/subhy2-qr?t=' + Date.now();
+      modal.classList.remove('hidden');
+      modal.classList.add('flex');
+    }
+
+    const btnCopySub = document.getElementById('btn-copy-sub');
+    if (btnCopySub) btnCopySub.addEventListener('click', copySubLink);
+    const btnShowSubQr = document.getElementById('btn-show-sub-qr');
+    if (btnShowSubQr) btnShowSubQr.addEventListener('click', showSubQr);
+    const btnCopySub6 = document.getElementById('btn-copy-sub6');
+    if (btnCopySub6) btnCopySub6.addEventListener('click', copySub6Link);
+    const btnShowSub6Qr = document.getElementById('btn-show-sub6-qr');
+    if (btnShowSub6Qr) btnShowSub6Qr.addEventListener('click', showSub6Qr);
+    const btnCopySubHy2 = document.getElementById('btn-copy-subhy2');
+    if (btnCopySubHy2) btnCopySubHy2.addEventListener('click', copySubHy2Link);
+    const btnShowSubHy2Qr = document.getElementById('btn-show-subhy2-qr');
+    if (btnShowSubHy2Qr) btnShowSubHy2Qr.addEventListener('click', showSubHy2Qr);
+    const btnCopySubAll = document.getElementById('btn-copy-suball');
+    if (btnCopySubAll) btnCopySubAll.addEventListener('click', () => {
+      navigator.clipboard.writeText(document.getElementById('suball-link').value).then(() => toast('✅ 组合订阅链接已复制'));
+    });
+    const btnShowSubAllQr = document.getElementById('btn-show-suball-qr');
+    if (btnShowSubAllQr) btnShowSubAllQr.addEventListener('click', () => {
+      const link = document.getElementById('suball-link').value;
+      const modal = document.getElementById('sub-qr-modal');
+      document.getElementById('sub-qr-text').textContent = link;
+      document.getElementById('sub-qr-img').src = '/suball-qr?t=' + Date.now();
+      modal.classList.remove('hidden'); modal.classList.add('flex');
+    });
+    const btnHideSubQr = document.getElementById('btn-hide-sub-qr');
+    if (btnHideSubQr) btnHideSubQr.addEventListener('click', hideSubQr);
+    const subQrModal = document.getElementById('sub-qr-modal');
+    if (subQrModal) {
+      subQrModal.addEventListener('click', (e) => {
+        if (e.target === subQrModal) hideSubQr();
+      });
+    }
+    const nodeSearchInput = document.getElementById('node-search');
+    if (nodeSearchInput) {
+      nodeSearchInput.addEventListener('input', (e) => {
+        filterNodes(e.target.value);
+      });
+    }
+    document.querySelectorAll('[data-copy-link-id]').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        copyLink(btn.dataset.copyLinkId);
+      });
+    });
+
+    function filterNodes(keyword) {
+      const q = (keyword || '').trim().toLowerCase();
+      document.querySelectorAll('.node-card').forEach(card => {
+        const text = (card.dataset.search || '').toLowerCase();
+        const protocol = (card.dataset.protocol || '').toLowerCase();
+
+        // 协议关键词精确匹配，避免 ss 命中 vless（vleSS）
+        if (q === 'ss' || q === 'vless' || q === 'hy2') {
+          card.style.display = protocol === q ? '' : 'none';
+          return;
+        }
+
+        card.style.display = !q || text.includes(q) ? '' : 'none';
+      });
+    }
+
+    // formatBytes 前端版本
+    function fmtBytes(b) {
+      if (b <= 0) return '0 B';
+      const u = ['B','KB','MB','GB','TB'];
+      const i = Math.min(Math.floor(Math.log(b) / Math.log(1024)), u.length - 1);
+      return (b / Math.pow(1024, i)).toFixed(i > 0 ? 2 : 0) + ' ' + u[i];
+    }
+
+    function esc(s) {
+      if (s == null) return '';
+      return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');
+    }
+
+    // 实时刷新统计数据（每 10 秒）
+    function applyPanelSummary(payload) {
+      const d = payload?.stats || {};
+      {
+        const el = document.getElementById('online-count');
+        if (el) el.textContent = (d.online || 0) + ' 人';
+        const gt = document.getElementById('global-traffic');
+        if (gt) gt.textContent = fmtBytes((d.globalUp || 0) + (d.globalDown || 0));
+        const ut = document.getElementById('used-traffic');
+        if (ut) ut.textContent = fmtBytes(d.totalUsed || 0);
+        const rt = document.getElementById('remaining-traffic');
+        if (rt) {
+          // 保留到期信息 span
+          const expirySpan = rt.querySelector('span');
+          const txt = d.remaining < 0 ? '∞' : fmtBytes(d.remaining);
+          if (expirySpan) {
+            rt.childNodes[0].textContent = txt + ' ';
+          } else {
+            rt.textContent = txt;
+          }
+        }
+      }
+    }
+
+    function refreshPanelSummary() {
+      fetch('/api/panel-summary', { cache: 'no-store' }).then(r => r.json()).then(applyPanelSummary).catch(() => {});
+    }
+    refreshPanelSummary();
+
+    const btnResetSub = document.getElementById('btn-reset-sub');
+    function hideResetModal() {
+      const m = document.getElementById('reset-confirm-modal');
+      if (m) { m.classList.remove('flex'); m.classList.add('hidden'); }
+    }
+    async function doResetSub() {
+      hideResetModal();
+      if (!btnResetSub) return;
+      btnResetSub.disabled = true;
+      const oldText = btnResetSub.textContent;
+      btnResetSub.textContent = '重置中...';
+      try {
+        const res = await fetch('/api/reset-subscription', { method: 'POST', headers: { 'X-CSRF-Token': '<%= typeof csrfToken !== "undefined" ? csrfToken : "" %>' } });
+        const d = await res.json();
+        if (d.ok) {
+          toast('✅ 已重置，正在刷新新链接...', 2000);
+          setTimeout(() => location.reload(), 1200);
+        } else {
+          toast(d.error || '重置失败', 3000, 'error');
+          btnResetSub.disabled = false;
+          btnResetSub.textContent = oldText;
+        }
+      } catch (e) {
+        toast('网络错误，请重试', 3000, 'error');
+        btnResetSub.disabled = false;
+        btnResetSub.textContent = oldText;
+      }
+    }
+    if (btnResetSub) btnResetSub.addEventListener('click', () => {
+      const m = document.getElementById('reset-confirm-modal');
+      if (m) { m.classList.remove('hidden'); m.classList.add('flex'); }
+    });
+    document.getElementById('reset-cancel')?.addEventListener('click', hideResetModal);
+    document.getElementById('reset-confirm')?.addEventListener('click', doResetSub);
+    const _resetModal = document.getElementById('reset-confirm-modal');
+    if (_resetModal) _resetModal.addEventListener('click', (e) => { if (e.target === _resetModal) hideResetModal(); });
+
+    async function bindTelegram() {
+      const res = await fetch('/api/tg-bind-token', { method: 'POST', headers: { 'X-CSRF-Token': '<%= typeof csrfToken !== "undefined" ? csrfToken : "" %>' } });
+      const d = await res.json();
+      if (d.ok && d.url) window.location.href = d.url;
+      else toast(d.error || '获取绑定链接失败', 2500, 'error');
+    }
+    const btnGenerateInvite = document.getElementById('btn-generate-invite');
+    if (btnGenerateInvite) btnGenerateInvite.addEventListener('click', generateInviteCode);
+    const btnCopyInvite = document.getElementById('btn-copy-invite');
+    if (btnCopyInvite) btnCopyInvite.addEventListener('click', copyInviteCode);
+    const btnTgBind = document.getElementById('btn-tg-bind');
+    if (btnTgBind) btnTgBind.addEventListener('click', bindTelegram);
+    const btnTgBindBanner = document.getElementById('btn-tg-bind-banner');
+    if (btnTgBindBanner) btnTgBindBanner.addEventListener('click', bindTelegram);
+    setInterval(refreshPanelSummary, 10000);
+
+    // 订阅重置倒计时
+    const nextUuidResetAt = <%- JSON.stringify(nextUuidResetAt || 0) %>;
+    const nextSubResetAt = <%- JSON.stringify(nextSubResetAt || 0) %>;
+
+    function fmtCountdown(ms) {
+      if (ms <= 0) return '即将重置';
+      const s = Math.floor(ms / 1000);
+      const d = Math.floor(s / 86400);
+      const h = Math.floor((s % 86400) / 3600);
+      const m = Math.floor((s % 3600) / 60);
+      if (d > 0) return `${d}天 ${h}小时`;
+      if (h > 0) return `${h}小时 ${m}分钟`;
+      return `${m}分钟`;
+    }
+
+    function tickResetCountdown() {
+      const now = Date.now();
+      const u = document.getElementById('uuid-reset-countdown');
+      const t = document.getElementById('sub-reset-countdown');
+      if (u) {
+        if (nextUuidResetAt === -1) {
+          u.textContent = '永不重置 ✨';
+          u.className = 'text-emerald-400';
+        } else {
+          u.textContent = fmtCountdown(nextUuidResetAt - now);
+        }
+      }
+      if (t) {
+        if (nextSubResetAt === -1) {
+          t.textContent = '永不重置 ✨';
+          t.className = 'text-emerald-400';
+        } else {
+          t.textContent = fmtCountdown(nextSubResetAt - now);
+        }
+      }
+    }
+    tickResetCountdown();
+    setInterval(tickResetCountdown, 30000);
+    tickInviteCountdown();
+    setInterval(tickInviteCountdown, 30000);
+
+    loadTrafficDetail = function(){};
+
+    // 能量兑换流量：检测开关后显示按钮，点击跳转兑换页
+    (function initExchange() {
+      const btn = document.getElementById('btn-exchange');
+      if (!btn) return;
+      fetch('/payment/packages', { cache: 'no-store' }).then(r => r.json()).then(d => {
+        if (!d.ok || !d.enabled) return;
+        btn.style.display = '';
+        btn.addEventListener('click', () => { window.location.href = '/payment'; });
+      }).catch(() => {});
+    })();
+  </script>
+
+  <style nonce="<%= nonce %>">
+    @media(max-width:400px){.sub-btn-row .bg-rose-600,.sub-btn-row .bg-indigo-600{padding-left:0.75rem;padding-right:0.75rem;font-size:0.75rem}}
+    #btn-reset-sub:hover{background:#f43f5e!important}
+    #btn-reset-sub:disabled{opacity:.55;cursor:not-allowed}
+  </style>
+
+
+<%- include('partials/foot') %>

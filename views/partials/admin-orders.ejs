@@ -1,0 +1,169 @@
+<!-- 订单管理 Tab -->
+<div class="tab-panel space-y-4" data-tab="orders">
+  <!-- 汇总卡片 -->
+  <div class="grid grid-cols-2 sm:grid-cols-4 gap-3" style="display:grid;grid-template-columns:repeat(2,1fr)">
+    <div class="glass rounded-2xl p-4">
+      <div class="text-gray-500 text-xs">已兑换流量</div>
+      <div class="text-xl font-bold text-emerald-400 mt-1"><span id="ord-sum-traffic">-</span> GB</div>
+    </div>
+    <div class="glass rounded-2xl p-4">
+      <div class="text-gray-500 text-xs">已完成订单</div>
+      <div class="text-xl font-bold text-white mt-1" id="ord-sum-completed">-</div>
+    </div>
+    <div class="glass rounded-2xl p-4">
+      <div class="text-gray-500 text-xs">今日兑换</div>
+      <div class="text-xl font-bold text-rose-400 mt-1"><span id="ord-sum-today">-</span> 笔</div>
+    </div>
+    <div class="glass rounded-2xl p-4">
+      <div class="text-gray-500 text-xs">总订单 / 待支付 / 失败</div>
+      <div class="text-sm font-medium text-gray-300 mt-2"><span id="ord-sum-total">-</span> / <span class="text-amber-400" id="ord-sum-pending">-</span> / <span class="text-gray-500" id="ord-sum-failed">-</span></div>
+    </div>
+  </div>
+
+  <!-- 筛选 + 搜索 -->
+  <div class="flex items-center justify-between gap-2 flex-wrap">
+    <div class="flex gap-1" id="ord-filters">
+      <button class="ord-filter tab-btn active text-xs px-3 py-1.5 rounded-xl" data-status="">全部</button>
+      <button class="ord-filter tab-btn text-xs px-3 py-1.5 rounded-xl" data-status="completed">已完成</button>
+      <button class="ord-filter tab-btn text-xs px-3 py-1.5 rounded-xl" data-status="pending">待支付</button>
+      <button class="ord-filter tab-btn text-xs px-3 py-1.5 rounded-xl" data-status="failed">失败</button>
+      <button class="ord-filter tab-btn text-xs px-3 py-1.5 rounded-xl" data-status="closed">已关闭</button>
+    </div>
+    <input type="text" id="ord-search" placeholder="搜索用户名 / 订单号..." class="bg-black/30 text-white px-3 py-1.5 rounded-xl border border-white/10 text-xs w-48">
+  </div>
+
+  <!-- 移动端卡片 -->
+  <div class="sm:hidden space-y-3" id="orders-cards">
+    <div class="text-center text-gray-500 text-sm py-8">加载中...</div>
+  </div>
+  <!-- 桌面端表格 -->
+  <div class="hidden sm:block glass rounded-2xl overflow-hidden">
+    <div class="overflow-x-auto">
+      <table class="w-full text-sm text-left">
+        <thead class="text-gray-500 border-b border-white/5 text-xs">
+          <tr>
+            <th class="py-3 px-4">订单号</th>
+            <th class="py-3 px-4">用户</th>
+            <th class="py-3 px-4">能量</th>
+            <th class="py-3 px-4">流量</th>
+            <th class="py-3 px-4">状态</th>
+            <th class="py-3 px-4">发起时间</th>
+            <th class="py-3 px-4">到账/更新</th>
+          </tr>
+        </thead>
+        <tbody class="text-gray-300" id="orders-tbody">
+          <tr><td colspan="7" class="py-8 text-center text-gray-500">加载中...</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <div class="flex items-center justify-between px-4 py-3 border-t border-white/5">
+      <span class="text-gray-500 text-xs" id="orders-page-info"></span>
+      <div class="flex gap-1" id="orders-pagination"></div>
+    </div>
+  </div>
+  <!-- 移动端分页 -->
+  <div class="sm:hidden flex items-center justify-between">
+    <span class="text-gray-500 text-xs" id="orders-page-info-m"></span>
+    <div class="flex gap-1" id="orders-pagination-m"></div>
+  </div>
+</div>
+
+<script nonce="<%= nonce %>">
+(function () {
+  let _ordPage = 1, _ordStatus = '', _ordSearch = '', _ordSearchTimer = null;
+
+  function esc(s) {
+    return String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+  }
+  function statusBadge(st) {
+    const map = {
+      completed: ['已完成', 'background:rgba(16,185,129,0.2);color:#34d399'],
+      pending: ['待支付', 'background:rgba(245,158,11,0.2);color:#fbbf24'],
+      failed: ['失败', 'background:rgba(239,68,68,0.2);color:#f87171'],
+    };
+    const [t, s] = map[st] || [st || '-', 'background:rgba(255,255,255,0.08);color:#9ca3af'];
+    return `<span style="padding:1px 8px;border-radius:6px;font-size:11px;${s}">${t}</span>`;
+  }
+  function fmtTime(s) { return s ? esc(String(s).replace('T', ' ').slice(0, 19)) : '-'; }
+
+  function loadSummary() {
+    fetch('/admin/api/orders/summary', { headers: { Accept: 'application/json' } })
+      .then(r => r.json()).then(d => {
+        if (!d.ok) return;
+        const s = d.summary;
+        const set = (id, v) => { const e = document.getElementById(id); if (e) e.textContent = v; };
+        set('ord-sum-traffic', s.traffic_gb); set('ord-sum-completed', s.completed);
+        set('ord-sum-today', s.todayCompleted); set('ord-sum-total', s.total);
+        set('ord-sum-pending', s.pending); set('ord-sum-failed', s.failed);
+      }).catch(() => {});
+  }
+
+  function renderPagination(totalPages, page, deskId, mobId) {
+    const html = (() => {
+      if (totalPages <= 1) return '';
+      let h = '';
+      const btn = (p, label, active) => `<button class="ord-page tab-btn text-xs px-2.5 py-1 rounded-lg ${active ? 'active' : ''}" data-p="${p}">${label}</button>`;
+      h += btn(Math.max(1, page - 1), '‹', false);
+      for (let p = 1; p <= totalPages; p++) {
+        if (p === 1 || p === totalPages || Math.abs(p - page) <= 1) h += btn(p, p, p === page);
+        else if (Math.abs(p - page) === 2) h += '<span class="text-gray-600 text-xs px-1">…</span>';
+      }
+      h += btn(Math.min(totalPages, page + 1), '›', false);
+      return h;
+    })();
+    [deskId, mobId].forEach(id => { const e = document.getElementById(id); if (e) e.innerHTML = html; });
+    document.querySelectorAll('.ord-page').forEach(b => b.addEventListener('click', () => { _ordPage = parseInt(b.dataset.p, 10); loadOrders(_ordPage); }));
+  }
+
+  window.loadOrders = function (page) {
+    _ordPage = page || _ordPage || 1;
+    loadSummary();
+    const qs = new URLSearchParams({ page: _ordPage, pageSize: 20, status: _ordStatus, search: _ordSearch });
+    fetch('/admin/api/orders?' + qs, { headers: { Accept: 'application/json' } })
+      .then(r => r.json()).then(d => {
+        if (!d.ok) return;
+        const tbody = document.getElementById('orders-tbody');
+        const cards = document.getElementById('orders-cards');
+        if (!d.orders.length) {
+          if (tbody) tbody.innerHTML = '<tr><td colspan="7" class="py-8 text-center text-gray-500">暂无订单</td></tr>';
+          if (cards) cards.innerHTML = '<div class="text-center text-gray-500 text-sm py-8">暂无订单</div>';
+        } else {
+          if (tbody) tbody.innerHTML = d.orders.map(o => `
+            <tr class="border-b border-white/5">
+              <td class="py-3 px-4 text-xs text-gray-400">${esc(o.order_id)}</td>
+              <td class="py-3 px-4">${esc(o.username || ('#' + o.user_id))}</td>
+              <td class="py-3 px-4">${o.amount}</td>
+              <td class="py-3 px-4 text-emerald-400">${o.traffic_gb} GB</td>
+              <td class="py-3 px-4">${statusBadge(o.status)}</td>
+              <td class="py-3 px-4 text-xs text-gray-500">${fmtTime(o.created_at)}</td>
+              <td class="py-3 px-4 text-xs text-gray-500">${fmtTime(o.settled_at)}</td>
+            </tr>`).join('');
+          if (cards) cards.innerHTML = d.orders.map(o => `
+            <div class="glass rounded-xl p-3">
+              <div class="flex items-center justify-between">
+                <span class="text-sm text-white">${esc(o.username || ('#' + o.user_id))}</span>
+                ${statusBadge(o.status)}
+              </div>
+              <div class="text-xs text-gray-400 mt-1">${o.amount} 能量 → <span class="text-emerald-400">${o.traffic_gb} GB</span></div>
+              <div class="text-[11px] text-gray-600 mt-1 break-all">${esc(o.order_id)}</div>
+              <div class="text-[11px] text-gray-600 mt-1">发起 ${fmtTime(o.created_at)}</div>
+            </div>`).join('');
+        }
+        const info = `第 ${d.page}/${d.totalPages || 1} 页 · 共 ${d.total} 条`;
+        ['orders-page-info', 'orders-page-info-m'].forEach(id => { const e = document.getElementById(id); if (e) e.textContent = info; });
+        renderPagination(d.totalPages, d.page, 'orders-pagination', 'orders-pagination-m');
+      }).catch(() => {});
+  };
+
+  document.querySelectorAll('.ord-filter').forEach(b => b.addEventListener('click', () => {
+    document.querySelectorAll('.ord-filter').forEach(x => x.classList.remove('active'));
+    b.classList.add('active');
+    _ordStatus = b.dataset.status; _ordPage = 1; loadOrders(1);
+  }));
+  const ordSearch = document.getElementById('ord-search');
+  if (ordSearch) ordSearch.addEventListener('input', () => {
+    clearTimeout(_ordSearchTimer);
+    _ordSearchTimer = setTimeout(() => { _ordSearch = ordSearch.value.trim(); _ordPage = 1; loadOrders(1); }, 350);
+  });
+})();
+</script>

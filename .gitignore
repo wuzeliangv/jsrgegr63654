@@ -1,0 +1,8 @@
+node_modules/
+data/
+.env
+*.log
+
+backups/
+database.db
+.plan.md

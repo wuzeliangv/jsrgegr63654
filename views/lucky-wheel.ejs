@@ -1,0 +1,153 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+<title>每周大转盘</title>
+<script src="https://telegram.org/js/telegram-web-app.js"></script>
+<style>
+:root{
+  --bg:#140915;
+  --bg2:#261325;
+  --line:rgba(255,255,255,.08);
+  --text:#f8fafc;
+  --muted:#b5bfd3;
+  --gold:#f59e0b;
+  --rose:#fb7185;
+  --cyan:#22d3ee;
+}
+*{margin:0;padding:0;box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+body{
+  min-height:100vh;
+  font-family:"SF Pro Display","Noto Sans SC","PingFang SC",system-ui,sans-serif;
+  color:var(--text);
+  background:
+    radial-gradient(circle at top left, rgba(245,158,11,.22), transparent 28%),
+    radial-gradient(circle at top right, rgba(251,113,133,.18), transparent 26%),
+    linear-gradient(165deg, var(--bg), var(--bg2));
+}
+.shell{min-height:100vh;padding:16px;display:flex;justify-content:center}
+.board{
+  width:min(100%,430px);
+  border-radius:30px;
+  overflow:hidden;
+  border:1px solid var(--line);
+  background:linear-gradient(180deg, rgba(255,255,255,.08), rgba(255,255,255,.03));
+  box-shadow:0 28px 80px rgba(0,0,0,.4);
+  backdrop-filter:blur(18px);
+}
+.hero{padding:16px 16px 10px}
+.eyebrow{display:inline-flex;align-items:center;gap:8px;padding:7px 10px;border-radius:999px;background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.08);font-size:11px;letter-spacing:.16em;text-transform:uppercase;color:#ffe7bb}
+.dot{width:7px;height:7px;border-radius:50%;background:linear-gradient(135deg,var(--gold),#fde68a);box-shadow:0 0 14px rgba(245,158,11,.8)}
+.title{margin-top:12px;font-size:30px;font-weight:900}
+.subtitle{margin-top:6px;font-size:13px;line-height:1.5;color:var(--muted)}
+.stats{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-top:14px}
+.stat{padding:10px 8px;border-radius:16px;text-align:center;background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.08)}
+.stat-k{font-size:11px;color:var(--muted)}
+.stat-v{margin-top:4px;font-size:18px;font-weight:800}
+.panel{margin:0 16px 12px;padding:12px 14px;border-radius:20px;background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.06)}
+.panel-k{font-size:11px;color:var(--muted)}
+.panel-v{margin-top:6px;font-size:14px;line-height:1.5}
+.wheel-wrap{position:relative;margin:8px 16px 14px;padding:18px;border-radius:28px;background:radial-gradient(circle at top, rgba(255,255,255,.08), rgba(255,255,255,.02));border:1px solid rgba(255,255,255,.08)}
+.pointer{
+  position:absolute;left:50%;top:8px;transform:translateX(-50%);
+  width:0;height:0;border-left:15px solid transparent;border-right:15px solid transparent;border-top:28px solid #fff3d0;
+  filter:drop-shadow(0 8px 12px rgba(0,0,0,.25));z-index:3;
+}
+.wheel-ring{
+  position:relative;margin:0 auto;width:min(70vw,288px);height:min(70vw,288px);max-width:288px;max-height:288px;
+  border-radius:50%;
+  padding:12px;
+  background:linear-gradient(135deg, rgba(255,255,255,.18), rgba(255,255,255,.04));
+  box-shadow:inset 0 0 0 1px rgba(255,255,255,.08), 0 18px 42px rgba(0,0,0,.28);
+}
+.wheel{
+  position:relative;width:100%;height:100%;border-radius:50%;
+  background:
+    conic-gradient(
+      #f59e0b 0deg 45deg,
+      #fb7185 45deg 90deg,
+      #22d3ee 90deg 135deg,
+      #8b5cf6 135deg 180deg,
+      #10b981 180deg 225deg,
+      #f97316 225deg 270deg,
+      #0ea5e9 270deg 315deg,
+      #ec4899 315deg 360deg
+    );
+  border:8px solid rgba(16,12,24,.82);
+  transition:transform 4.6s cubic-bezier(.12,.88,.14,1);
+  overflow:hidden;
+}
+.wheel::after{
+  content:"";
+  position:absolute;inset:50%;width:60px;height:60px;transform:translate(-50%,-50%);
+  border-radius:50%;
+  background:radial-gradient(circle at 30% 30%, #fff8de, #f59e0b);
+  box-shadow:0 0 0 6px rgba(17,12,27,.86);
+}
+.segment-label{
+  position:absolute;left:50%;top:50%;
+  width:64px;
+  transform-origin:0 0;
+  font-size:12px;font-weight:900;letter-spacing:0;color:#fff;text-align:center;
+  text-shadow:0 2px 6px rgba(0,0,0,.35);
+}
+.cta{padding:0 16px 16px}
+.spin-btn{
+  width:100%;border:0;border-radius:18px;padding:16px 18px;
+  font-size:16px;font-weight:900;color:#fff;
+  background:linear-gradient(135deg, #fb7185, #f59e0b);
+  box-shadow:0 16px 32px rgba(245,158,11,.22);
+}
+.spin-btn:disabled{opacity:.5;box-shadow:none}
+.result{margin:0 16px 16px;padding:14px 16px;border-radius:20px;background:linear-gradient(180deg, rgba(255,255,255,.08), rgba(255,255,255,.03));border:1px solid rgba(255,255,255,.08)}
+.result-tag{font-size:11px;letter-spacing:.12em;text-transform:uppercase;color:#e8d5ff}
+.result-title{margin-top:8px;font-size:22px;font-weight:900}
+.result-sub{margin-top:4px;font-size:13px;color:var(--muted);line-height:1.5;min-height:20px}
+</style>
+</head>
+<body>
+<div class="shell">
+  <div class="board">
+    <div class="hero">
+      <div class="eyebrow"><span class="dot"></span>Weekly Lucky Wheel</div>
+      <div class="title">每周大转盘</div>
+      <div class="subtitle">每周只有 1 次机会。指针停下的那一格，就是这周的流量奖励。</div>
+      <div class="stats">
+        <div class="stat"><div class="stat-k">每周次数</div><div class="stat-v">1</div></div>
+        <div class="stat"><div class="stat-k">最高奖励</div><div class="stat-v">50GB</div></div>
+        <div class="stat"><div class="stat-k">最低奖励</div><div class="stat-v">5GB</div></div>
+      </div>
+    </div>
+    <div class="panel">
+      <div class="panel-k">本周状态</div>
+      <div class="panel-v" id="status-text">正在读取本周转盘状态...</div>
+    </div>
+    <div class="wheel-wrap">
+      <div class="pointer"></div>
+      <div class="wheel-ring">
+        <div class="wheel" id="wheel">
+          <div class="segment-label" style="transform:rotate(-67.5deg) translate(-32px,-116px);">50GB</div>
+          <div class="segment-label" style="transform:rotate(-22.5deg) translate(-32px,-116px);">30GB</div>
+          <div class="segment-label" style="transform:rotate(22.5deg) translate(-32px,-116px);">20GB</div>
+          <div class="segment-label" style="transform:rotate(67.5deg) translate(-32px,-116px);">15GB</div>
+          <div class="segment-label" style="transform:rotate(112.5deg) translate(-32px,-116px);">10GB</div>
+          <div class="segment-label" style="transform:rotate(157.5deg) translate(-32px,-116px);">8GB</div>
+          <div class="segment-label" style="transform:rotate(202.5deg) translate(-32px,-116px);">5GB</div>
+          <div class="segment-label" style="transform:rotate(247.5deg) translate(-32px,-116px);">5GB</div>
+        </div>
+      </div>
+    </div>
+    <div class="cta">
+      <button type="button" class="spin-btn" id="spin-btn">开始转盘</button>
+    </div>
+    <div class="result">
+      <div class="result-tag">Spin Result</div>
+      <div class="result-title" id="result-title">指针还没转动</div>
+      <div class="result-sub" id="result-sub">本周抽中后会立即到账，下周一再开启新一轮。</div>
+    </div>
+  </div>
+</div>
+<script src="/js/lucky-wheel.js?v=<%= assetVersion %>"></script>
+</body>
+</html>
