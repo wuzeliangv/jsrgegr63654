@@ -548,7 +548,7 @@ function buildSshConnectOpts(sshInfo) {
 
 async function deployNode(sshInfo, db) {
   const uuid = uuidv4();
-  const port = randomPort();
+  const port = 443; // VLESS Reality 默认使用 443 端口，确保安全绕过 GFW 高端口阻断并隐藏特征
 
   const { displayGeo, isHomeNetwork } = await resolveDeployGeo(sshInfo);
 
@@ -618,6 +618,16 @@ async function deployNode(sshInfo, db) {
 
     await ssh.execCommand('mkdir -p /usr/local/etc/xray');
     await sftpWriteFile(ssh, configPath, configJson);
+
+    // 开放防火墙端口
+    await ssh.execCommand(`
+      iptables -C INPUT -p tcp --dport ${port} -j ACCEPT 2>/dev/null || iptables -I INPUT -p tcp --dport ${port} -j ACCEPT
+      iptables -C INPUT -p udp --dport ${port} -j ACCEPT 2>/dev/null || iptables -I INPUT -p udp --dport ${port} -j ACCEPT
+      ip6tables -C INPUT -p tcp --dport ${port} -j ACCEPT 2>/dev/null || ip6tables -I INPUT -p tcp --dport ${port} -j ACCEPT
+      ip6tables -C INPUT -p udp --dport ${port} -j ACCEPT 2>/dev/null || ip6tables -I INPUT -p udp --dport ${port} -j ACCEPT
+      command -v netfilter-persistent &>/dev/null && netfilter-persistent save || true
+    `);
+
     const startResult = await ssh.execCommand('systemctl enable xray && systemctl restart xray && sleep 2 && systemctl is-active --quiet xray && echo DEPLOY_OK || echo DEPLOY_FAIL');
 
     if (startResult.stdout.includes('DEPLOY_OK')) {
@@ -949,7 +959,7 @@ async function deploySsNode(sshInfo, db) {
 async function deployDualNode(sshInfo, db) {
   if (typeof db.getDb === 'function') db.getDb();
 
-  const vlessPort = randomPort();
+  const vlessPort = 443; // VLESS Reality 默认使用 443
   const ssPort = randomPort(10000, 60000);
   const uuid = uuidv4();
   const ssPassword = crypto.randomBytes(16).toString('base64');
