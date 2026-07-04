@@ -548,7 +548,7 @@ function buildSshConnectOpts(sshInfo) {
 
 async function deployNode(sshInfo, db) {
   const uuid = uuidv4();
-  const port = 443; // VLESS Reality 默认使用 443 端口，确保安全绕过 GFW 高端口阻断并隐藏特征
+  const port = randomPort(20000, 50000); // 使用 20000-50000 范围内的随机端口
 
   const { displayGeo, isHomeNetwork } = await resolveDeployGeo(sshInfo);
 
@@ -959,7 +959,7 @@ async function deploySsNode(sshInfo, db) {
 async function deployDualNode(sshInfo, db) {
   if (typeof db.getDb === 'function') db.getDb();
 
-  const vlessPort = 443; // VLESS Reality 默认使用 443
+  const vlessPort = randomPort(20000, 50000); // 使用 20000-50000 范围内的随机端口
   const ssPort = randomPort(10000, 60000);
   const uuid = uuidv4();
   const ssPassword = crypto.randomBytes(16).toString('base64');
