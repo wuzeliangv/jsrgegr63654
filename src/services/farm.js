@@ -106,7 +106,10 @@ function plotInfo(user, slot, row, now) {
   info.mature = remainingSec <= 0;
   info.remainingSec = remainingSec;
   info.totalSec = CROP.hours * 3600;
-  info.expectedGb = CROP.yieldGb;
+
+  const stolen = Math.min(STEAL_MAX_PER_PLOT_GB, _stolenFromPlot(user.id, slot, row.planted_at));
+  info.expectedGb = Math.max(0, CROP.yieldGb - stolen);
+
   return info;
 }
 
