@@ -1,104 +1,63 @@
-# Changelog
+# 版本更新日志 (Changelog)
 
-## v4.3.0 (2026-06)
-
-### 新功能
-
-- **反代型容器节点(VLESS + WS + TLS)**：节点管理新增「手动添加节点」表单,支持 `ws`/`grpc` 传输 + `tls` + 自定义 `path`/SNI,可接入仅暴露单端口、靠 TLS 域名反代的容器型节点(无 SSH、不参与自动轮换)。订阅生成(v2ray/Clash/sing-box)全面支持 WS·gRPC+TLS
-- **节点用户同步接口**：`GET /api/agent/users`(Bearer `agent_token` 鉴权),返回本节点有效用户表 `[{userId, uuid, username}]`,供自研 core 按 UUID 鉴权 + 按 userId 计流量
-- **自研容器 core**(`container-core/`)：Go 实现的 VLESS-over-WS 入站,自带按用户计量,复用面板 `/ws/agent` 协议上报存活与流量(节点上线 + 按用户记账),不依赖 Xray
-
-### 改进
-
-- **上报存活字段中性别名**：`/ws/agent` 的 `report` 现接受 `serviceAlive` 作为 `xrayAlive` 的别名,便于非 Xray 的自研节点上报
-- **Clash YAML 生成器**：修复嵌套对象(如 `ws-opts.headers.Host`)被序列化成 `[object Object]` 的问题
+本文档记录大姨子面板 (Dayizi Panel) 的版本演进历史、新增功能、架构改进及 Bug 修复。
 
 ---
 
-## v4.2.0 (2026-05)
+## 🚀 v4.3.0 (2026-06)
 
-### 新功能
+### ✨ 新功能
+- **反代型容器节点支持 (VLESS + WS + TLS)**：
+  - 节点管理模块新增「手动添加节点」表单，支持配置 `ws` / `grpc` 传输、`tls` 安全校验以及自定义 `path` / SNI。
+  - 完美接入通过前置平台（如 Northflank / Nginx / Caddy）做 TLS 终止后反代至明文 WS 端口的容器型节点。
+  - 订阅生成模块（V2Ray Base64 / Clash YAML / Sing-box JSON）全协议支持 WS·gRPC + TLS 语法。
+- **节点用户同步 API**：
+  - 新增 `GET /api/agent/users` 接口（使用 Bearer `agent_token` 鉴权），实时返回本节点有效用户列表 `[{userId, uuid, username}]`，支持自研协议核心按 UUID 鉴权与按 `userId` 统计流量。
+- **轻量级自研容器 Core (`container-core/`)**：
+  - 提供 Go 语言实现的纯净 VLESS-over-WS 入站核心，原生支持按用户流量计量。
+  - 复用面板已有 `/ws/agent` WebSocket 通信协议进行心跳与增量流量上报，无需依赖重量级 Xray 内核。
 
-- **TG 解绑**：用户可在面板自助解绑 Telegram（点击导航栏蓝色 TG 图标）
-- **TG 未签到自动冻结**：30 天未在 TG 签到的绑定用户自动冻结，签到一次自动解冻（替代旧的"未登录冻结"和"一键禁用不活跃用户"）
-- **探针开放**：探针监控页面（`/monitor`）从仅管理员可见调整为所有登录用户可见
-
-### Bug 修复
-
-- **修复 AWS 换 IP 误报失败**：`notify.ops()` 在通知开关关闭时返回 `undefined` 导致 `.catch()` 报 TypeError，HTTP 返回 500，但实际 IP 已成功更换。现 `notify` 所有方法统一返回 Promise
-- **修复 traffic 外键崩溃**：删除节点/用户后 Agent 仍上报旧数据触发外键约束，导致进程崩溃。现 `recordTraffic` 失败时记录 debug 日志而非抛出
-- **修复 scrypt DoS 风险**：`verifyPassword` 限制 N/r/p 参数范围（N ≤ 2^20, r ≤ 16, p ≤ 4），防止篡改数据库哈希导致 CPU/内存 DoS
-
-### AWS 区域
-
-- 新增亚太区域：`ap-southeast-3` 雅加达、`ap-southeast-4` 墨尔本、**`ap-southeast-5` 吉隆坡**、`ap-southeast-7` 曼谷、`ap-south-2` 海得拉巴
-- 新增美洲：`ca-west-1` 加拿大西部、`mx-central-1` 墨西哥
-- 新增欧洲：`eu-central-2` 苏黎世、`eu-south-1` 米兰、`eu-south-2` 西班牙
-- 新增中东非洲：`me-central-1` 阿联酋、`il-central-1` 以色列、`af-south-1` 开普敦
-- 前端区域下拉框按地理位置分组显示
-
-### UI
-
-- 已绑定 TG 的图标从勾号改为蓝色 TG 图标（避免歧义）
-- 修复弹窗使用 Tailwind JIT 任意值 class 在预编译 CSS 中不生效的问题（`z-[999]` / `bg-[#1a1520]` 改为 inline style）
-
-### 其他
-
-- 删除"🚫 一键禁用不活跃用户"功能（被 TG 未签到策略替代）
-- 删除"未登录自动冻结"配置项（被 TG 未签到策略替代）
+### 🔧 改进与优化
+- **心跳存活字段兼容**：`/ws/agent` 协议支持将 `serviceAlive` 作为 `xrayAlive` 的别名，便于非 Xray 自研节点服务上报存活状态。
+- **Clash YAML 导出生成**：修复深层嵌套属性（如 `ws-opts.headers.Host`）在序列化时被误处理为 `[object Object]` 的缺陷。
 
 ---
 
-## v4.1.1 (2026-03-17)
+## ⚡ v4.2.0 (2026-05)
 
-### Bug 修复
+### ✨ 新功能
+- **TG 账号自助解绑**：用户可在面板首页顶部导航栏一键解绑关联的 Telegram 账号。
+- **TG 未签到自动冻结**：支持针对 30 天未在 TG 签到的绑定用户实施自动冻结，签到后自动恢复解冻状态。
+- **探针监控全员开放**：探针监控页面（`/monitor`）从管理员专属调整为所有已登录用户均可实时查看。
 
-- 修复登录密码 `.trim()` 与注册不一致导致含空格密码无法登录
-- 修复 `emitSyncNode` 传更新前旧对象
-- 修复封禁不活跃用户漏掉从未登录的用户
-- 修复编辑 AWS 账号时 socks5 配置被意外清空
-- 修复 SS 节点部署缺少 `ssh_key_path` 导致 SSH Key 部署后无法回连
+### 🐛 Bug 修复
+- **修复 AWS 换 IP 异常**：解决 `notify.ops()` 在通知开关关闭时返回 `undefined` 引发 `TypeError` 导致的 500 报错（实际 IP 已成功更替）。
+- **修复外键数据剔除异常**：代理节点上传已删除节点/用户的旧流量时，优化为记录 debug 日志，消除外键约束崩溃风险。
+- **密码哈希 DoS 防护**：对 `scrypt` 计算参数限制算法边界（$N \le 2^{20}, r \le 16, p \le 4$），防范恶意哈希引起的 CPU/内存 DoS 攻击。
 
-### 代码清理
+### 🌍 AWS 区域拓展
+- **亚太地区**：新增 `ap-southeast-3`（雅加达）、`ap-southeast-4`（墨尔本）、`ap-southeast-5`（吉隆坡）、`ap-southeast-7`（曼谷）、`ap-south-2`（海得拉巴）。
+- **美洲地区**：新增 `ca-west-1`（加拿大西部）、`mx-central-1`（墨西哥）。
+- **欧洲地区**：新增 `eu-central-2`（苏黎世）、`eu-south-1`（米兰）、`eu-south-2`（西班牙）。
+- **中东及非洲**：新增 `me-central-1`（阿联酋）、`il-central-1`（以色列）、`af-south-1`（开普敦）。
 
-- 新建 `src/utils/regions.js` 统一地区映射
-- 新建 `src/utils/tgGame.js` 统一游戏公共函数
-- 新建 `src/services/migrations.js` 拆分数据库迁移代码
-- 删除 20+ 处未使用的 import 和死代码
-- `forgotCodes` 加入定时清理防内存泄漏
+---
 
-### 运维
+## 🛠️ v4.1.1 (2026-03-17)
 
-- 补全 `openclaw-ops/` 目录
-- 更新蜜桃酱人设
+### 🐛 Bug 修复
+- 修复用户注册与登录阶段密码 `.trim()` 逻辑不一致导致含首尾空格密码无法正常登录的问题。
+- 修复 `emitSyncNode` 向长连接推流时误传更新前旧节点对象的问题。
+- 修复编辑 AWS 账号参数时，SOCKS5 落地代理配置被意外置空的缺陷。
+- 修复 SS 节点部署缺少 `ssh_key_path` 导致基于 SSH Key 认证的远程节点部署后无法回连的问题。
 
-## v4.1.0 (2026-03-13)
+### 🧹 代码整理与架构演进
+- 抽离 `src/utils/regions.js` 统一处理全球物理区域与国旗 Emoji 映射。
+- 抽离 `src/utils/tgGame.js` 统一封装 Telegram WebApp 游戏公共逻辑。
+- 拆分 `src/services/migrations.js` 专门负责 SQLite 数据库版本迁移与 Schema 演进。
 
-### Telegram
+---
 
-- 重构机器人菜单：签到 / 大转盘 / 翻卡 / 猜拳 / 我的 / 订阅
-- 增加 `my` 二级菜单和管理员总览
-- 增加 `/adminstats`
-- 修复 callback 场景下误判未绑定账号
+## 📌 v4.0.0 (2026-03-10)
 
-### TG WebApp
-
-- 猜拳持久化每日限制
-- 增加 initData 过期校验
-- 新增每日翻卡 WebApp
-- 每周抽奖升级为大转盘 WebApp
-
-### 其他
-
-- 签到 / 抽奖流程事务化
-- 每周抽奖统一按 Asia/Shanghai 周一边界
-
-## v4.0.0 (2026-03-10)
-
-- 邮箱注册、找回密码、订阅签名、TG 绑定完成整合
-
-## v3.x
-
-- 订阅风控后台配置化
-- 端口轮换周期支持配置
-- 从旧登录路径收口到邮箱注册 / 登录
+- 重构架构，将邮箱注册验证、找回密码、订阅 HMAC 签名防盗链及 Telegram Bot 系统全面深度融合。

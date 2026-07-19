@@ -1,13 +1,13 @@
 // 农场种菜收流量 —— 单作物 + 种子机制
-// 设计：唯一作物🌾 24h成熟、单块固定收5GB；签到送种子(=地块数)、种子上限=地块数；
-//       播种消耗1颗种子(不扣流量)、收获给流量；24h成熟天然限制每块地每天1收，无需硬封顶。
+// 设计：唯一作物🌾 20h成熟、单块固定收5GB；签到送种子(=地块数)、种子上限=地块数；
+//       播种消耗1颗种子(不扣流量)、收获给流量；20h成熟天然限制每块地每天1收，无需硬封顶。
 const db = require('./database');
 const { today } = require('../utils/tgGame');
 
 const GB = 1073741824;
 
 // 唯一作物
-const CROP = { id: 'lotus', emoji: '🌙', name: '月华宝莲', hours: 24, yieldGb: 5 };
+const CROP = { id: 'lotus', emoji: '🌙', name: '月华宝莲', hours: 20, yieldGb: 5 };
 
 const PLOTS_BY_LEVEL = [1, 2, 3, 4];  // 普通/VIP/SVIP/SSVIP 解锁地块数（也是种子上限/每日签到发放数）
 const TOTAL_PLOTS = 4;
@@ -30,6 +30,7 @@ function ensureTables() {
       slot INTEGER NOT NULL,
       crop TEXT NOT NULL,
       planted_at INTEGER NOT NULL,
+      notified_mature INTEGER NOT NULL DEFAULT 0,
       PRIMARY KEY (user_id, slot)
     );
     CREATE TABLE IF NOT EXISTS tg_farm_seeds (
@@ -52,6 +53,9 @@ function ensureTables() {
     CREATE INDEX IF NOT EXISTS idx_farm_steals_thief_day
       ON tg_farm_steals (thief_id, day);
   `);
+  try {
+    db.getDb().exec('ALTER TABLE tg_farm_plots ADD COLUMN notified_mature INTEGER NOT NULL DEFAULT 0');
+  } catch (_) {}
 }
 
 // 某一茬作物（victim+slot+planted_at）已被偷走的总 GB
@@ -340,10 +344,35 @@ function steal(thief, victimId, slot) {
   };
 }
 
+async function checkAndNotifyMatureCrops() {
+  ensureTables();
+  const now = Date.now();
+  const matureAtLimit = now - CROP.hours * 3600 * 1000;
+  const rows = db.getDb().prepare(`
+    SELECT p.user_id, p.slot, u.telegram_id
+    FROM tg_farm_plots p
+    JOIN users u ON u.id = p.user_id
+    WHERE p.planted_at <= ? AND p.notified_mature = 0 AND u.telegram_id IS NOT NULL AND u.telegram_id != ''
+  `).all(matureAtLimit);
+
+  if (rows.length === 0) return;
+
+  const { sendToUser } = require('./notify');
+
+  for (const r of rows) {
+    // 先标记为已通知，防止下一次执行时发生重复发送竞态
+    db.getDb().prepare('UPDATE tg_farm_plots SET notified_mature = 1 WHERE user_id = ? AND slot = ?').run(r.user_id, r.slot);
+    
+    const text = `🌾 <b>农场成熟提醒</b>\n\n您的地块 <b>#${r.slot + 1}</b> 种植的 <b>${CROP.name}</b> 已经成熟啦！\n快去农场收获，换取流量吧～ 🌱`;
+    await sendToUser(r.telegram_id, text);
+  }
+}
+
 module.exports = {
   CROP, TOTAL_PLOTS, PLOTS_BY_LEVEL,
   STEAL_PER_GB, STEAL_MAX_PER_PLOT_GB, STEAL_DAILY_LIMIT,
   ensureTables, getState, plant, harvest, harvestAll,
   getRandomFarm, steal, stealCountToday,
   getSeeds, setSeeds, grantDailySeeds, unlockedPlots, seedCap, dailySeedGrant,
+  checkAndNotifyMatureCrops,
 };

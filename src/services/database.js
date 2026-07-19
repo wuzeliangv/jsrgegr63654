@@ -395,6 +395,23 @@ function initTables() {
     )
   `);
 
+  // 滥用行为日志
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS abuse_log (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      node_id INTEGER,
+      user_id INTEGER,
+      alert_type TEXT NOT NULL,
+      detail TEXT DEFAULT '',
+      created_at TEXT DEFAULT (datetime('now')),
+      FOREIGN KEY (node_id) REFERENCES nodes(id) ON DELETE SET NULL,
+      FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE SET NULL
+    );
+    CREATE INDEX IF NOT EXISTS idx_abuse_log_user_time ON abuse_log(user_id, created_at);
+    CREATE INDEX IF NOT EXISTS idx_abuse_log_node_time ON abuse_log(node_id, created_at);
+    CREATE INDEX IF NOT EXISTS idx_abuse_log_type_time ON abuse_log(alert_type, created_at);
+  `);
+
   // 迁移（拆分到 migrations.js）
   require('./migrations').runMigrations(db);
 }

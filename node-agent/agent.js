@@ -15,7 +15,7 @@ const crypto = require('crypto');
 const CONFIG_PATH = '/etc/vless-agent/config.json';
 const XRAY_CONFIG_PATH = '/usr/local/etc/xray/config.json';
 const AGENT_PATH = '/opt/vless-agent/agent.js';
-const AGENT_VERSION = process.env.AGENT_VERSION || '1.4.0';
+const AGENT_VERSION = process.env.AGENT_VERSION || '1.5.0';
 
 const CHINA_PROBE_TARGETS = [
   { host: '220.202.155.242', port: 80 },
@@ -30,6 +30,14 @@ let config = loadConfig();
 const REPORT_INTERVAL = config.reportInterval || 2_000;
 const HEARTBEAT_INTERVAL = 30_000;
 const SELF_HEAL_INTERVAL = config.selfHealInterval || 60_000;
+
+// ─── 连接监控配置 ───
+const CONN_MONITOR_INTERVAL = 10_000;      // 每 10 秒检查一次
+const CONN_ALERT_THRESHOLD = 100;           // 单次检测的活跃连接数告警阈值
+const CONN_RATE_WINDOW_SEC = 30;            // 滑动窗口长度（秒）
+const CONN_LOG_ROTATE_INTERVAL = 3600_000;  // 每小时轮转日志
+const CONN_LOG_MAX_SIZE = 10 * 1024 * 1024; // 日志最大 10MB 触发轮转
+const HY2_LOG_PATH = '/tmp/hysteria-access.log';
 
 // ─── TLS 配置 ───
 const INSECURE_TLS = config.insecureTls === true;
@@ -59,6 +67,7 @@ const EXEC_WHITELIST_EXACT = new Set([
   'cat /etc/hysteria/config.yaml',
   'free -m',
   'free -h',
+  'conntrack -C',
 ]);
 // 受控前缀匹配：仅限安全的只读诊断命令
 const EXEC_WHITELIST_PREFIX = [
@@ -70,6 +79,8 @@ const EXEC_WHITELIST_PREFIX = [
   'df -h ',
   'ping -c ',
   'ps aux',
+  'ss -tnp',
+  'ss -tnp ',
 ];
 const EXEC_WHITELIST_ENABLED = config.execWhitelistEnabled !== false;
 const AGENT_CAPABILITIES = {
@@ -77,6 +88,7 @@ const AGENT_CAPABILITIES = {
   execWhitelist: EXEC_WHITELIST_ENABLED,
   selfHeal: true,
   selfUpdate: true,
+  connMonitor: true,
 };
 const PANEL_HOST = (() => {
   try { return new URL(config.server).hostname.toLowerCase(); } catch { return null; }
@@ -99,6 +111,11 @@ let reconnectDelay = 1000;
 let heartbeatTimer = null;
 let reportTimer = null;
 let selfHealTimer = null;
+let connMonitorTimer = null;
+let connLogRotateTimer = null;
+let _pendingAbuseAlerts = [];    // 待上报的滥用告警
+let _hy2PrevTraffic = {};        // Hy2 流量快照（用于速率检测）
+let _hy2PrevTrafficTs = 0;
 
 // ─── 配置加载 ───
 function loadConfig() {
@@ -453,6 +470,160 @@ async function getXrayTraffic() {
   }
 }
 
+// ─── 连接监控（防滥用）───
+
+// 获取 hysteria-server 进程的活跃出站 TCP 连接数
+async function getHysteriaConnCount() {
+  const { ok, stdout } = await run(
+    "ss -tnp state established | grep 'hysteria' | grep -v '127.0.0.1' | wc -l",
+    5000
+  );
+  if (!ok) return 0;
+  return parseInt(stdout, 10) || 0;
+}
+
+// 获取 xray 进程的活跃出站 TCP 连接数
+async function getXrayConnCount() {
+  const { ok, stdout } = await run(
+    "ss -tnp state established | grep 'xray' | grep -v '127.0.0.1' | wc -l",
+    5000
+  );
+  if (!ok) return 0;
+  return parseInt(stdout, 10) || 0;
+}
+
+// Hy2 流量速率异常检测：通过流量 API 快照对比找出流量突增的用户
+async function detectHy2TrafficSpike() {
+  try {
+    const configRaw = fs.readFileSync('/etc/hysteria/config.yaml', 'utf8');
+    const secretMatch = configRaw.match(/secret:\s*"?([^"\n]+)"?/);
+    if (!secretMatch) return [];
+    const secret = secretMatch[1].trim();
+
+    const data = await new Promise((resolve) => {
+      const reqOpts = {
+        hostname: '127.0.0.1',
+        port: 7653,
+        path: '/traffic?clear=0',  // 注意：不清零，仅查询
+        method: 'GET',
+        headers: { 'Authorization': secret },
+        timeout: 5000,
+      };
+      const req = http.request(reqOpts, (res) => {
+        let body = '';
+        res.on('data', (chunk) => { body += chunk; });
+        res.on('end', () => {
+          try { resolve(JSON.parse(body)); } catch { resolve(null); }
+        });
+      });
+      req.on('error', () => resolve(null));
+      req.on('timeout', () => { req.destroy(); resolve(null); });
+      req.end();
+    });
+
+    if (!data) return [];
+
+    const now = Date.now();
+    const dtSec = _hy2PrevTrafficTs > 0 ? (now - _hy2PrevTrafficTs) / 1000 : 0;
+    const alerts = [];
+
+    if (dtSec > 0 && dtSec < 60) {
+      for (const [email, stats] of Object.entries(data)) {
+        const m = email.match(/^u-(\d+)-h(?:@p)?$/);
+        if (!m) continue;
+        const userId = parseInt(m[1], 10);
+        const currentTotal = (stats.tx || 0) + (stats.rx || 0);
+        const prevTotal = _hy2PrevTraffic[email] || 0;
+        const delta = currentTotal - prevTotal;
+        if (delta <= 0) continue;
+        // 计算速率（字节/秒）
+        const rateBps = delta / dtSec;
+        const rateMbps = (rateBps * 8) / (1024 * 1024);
+        // 超过 200 Mbps 持续传输视为异常（扫描或滥用）
+        if (rateMbps > 200) {
+          alerts.push({
+            userId,
+            type: 'traffic_spike',
+            rateMbps: +rateMbps.toFixed(1),
+            deltaBytes: delta,
+            windowSec: +dtSec.toFixed(1),
+          });
+        }
+      }
+    }
+
+    // 更新快照
+    _hy2PrevTraffic = {};
+    for (const [email, stats] of Object.entries(data)) {
+      _hy2PrevTraffic[email] = (stats.tx || 0) + (stats.rx || 0);
+    }
+    _hy2PrevTrafficTs = now;
+
+    return alerts;
+  } catch {
+    return [];
+  }
+}
+
+// 主连接监控循环
+async function monitorConnections() {
+  try {
+    const [hy2Conns, xrayConns, trafficAlerts] = await Promise.all([
+      getHysteriaConnCount(),
+      getXrayConnCount(),
+      detectHy2TrafficSpike(),
+    ]);
+
+    const totalConns = hy2Conns + xrayConns;
+
+    // 总连接数超标告警
+    if (totalConns > CONN_ALERT_THRESHOLD) {
+      _pendingAbuseAlerts.push({
+        type: 'high_conn_count',
+        totalConns,
+        hy2Conns,
+        xrayConns,
+        threshold: CONN_ALERT_THRESHOLD,
+        ts: new Date().toISOString(),
+      });
+      log('防滥用', `⚠️  活跃连接数 ${totalConns} 超过阈值 ${CONN_ALERT_THRESHOLD} (hy2=${hy2Conns}, xray=${xrayConns})`);
+    }
+
+    // Hy2 流量速率异常
+    for (const alert of trafficAlerts) {
+      _pendingAbuseAlerts.push({
+        ...alert,
+        ts: new Date().toISOString(),
+      });
+      log('防滥用', `⚠️  用户 ${alert.userId} 流量速率异常: ${alert.rateMbps} Mbps (${(alert.deltaBytes / 1024 / 1024).toFixed(1)} MB / ${alert.windowSec}s)`);
+    }
+
+    // 限制队列长度，防止内存泄漏
+    if (_pendingAbuseAlerts.length > 50) {
+      _pendingAbuseAlerts = _pendingAbuseAlerts.slice(-50);
+    }
+  } catch (e) {
+    log('防滥用', `监控异常: ${e.message}`);
+  }
+}
+
+// 日志轮转（截断 hysteria 的 stderr 重定向日志）
+function rotateConnLog() {
+  try {
+    if (!fs.existsSync(HY2_LOG_PATH)) return;
+    const stat = fs.statSync(HY2_LOG_PATH);
+    if (stat.size > CONN_LOG_MAX_SIZE) {
+      const content = fs.readFileSync(HY2_LOG_PATH, 'utf8');
+      const lines = content.split('\n');
+      const keep = lines.slice(-2000).join('\n');
+      fs.writeFileSync(HY2_LOG_PATH, keep, 'utf8');
+      log('防滥用', `日志轮转完成: ${(stat.size / 1024 / 1024).toFixed(1)} MB → ${(keep.length / 1024 / 1024).toFixed(1)} MB`);
+    }
+  } catch (e) {
+    log('防滥用', `日志轮转失败: ${e.message}`);
+  }
+}
+
 // ─── 定时上报 ───
 async function report() {
   try {
@@ -470,6 +641,11 @@ async function report() {
     ]);
     const sys = getSystemInfo();
     const allTraffic = [...traffic, ...hy2Traffic];
+
+    // 采集待上报的滥用告警（采集后清空）
+    const abuseAlerts = _pendingAbuseAlerts.length > 0 ? [..._pendingAbuseAlerts] : undefined;
+    if (abuseAlerts) _pendingAbuseAlerts = [];
+
     sendMsg({
       type: 'report',
       ts: Date.now(),
@@ -488,6 +664,7 @@ async function report() {
       cpuUsage,
       netBandwidth,
       uptime: sys.uptime,
+      abuseAlerts,
     });
   } catch (e) {
     log('上报', `失败: ${e.message}`);
@@ -985,6 +1162,8 @@ function start() {
 
   reportTimer = setInterval(report, REPORT_INTERVAL);
   selfHealTimer = setInterval(selfHeal, SELF_HEAL_INTERVAL);
+  connMonitorTimer = setInterval(monitorConnections, CONN_MONITOR_INTERVAL);
+  connLogRotateTimer = setInterval(rotateConnLog, CONN_LOG_ROTATE_INTERVAL);
   setInterval(watchdog, 30_000);
 
   // 优雅退出
@@ -992,6 +1171,8 @@ function start() {
     log('退出', `收到 ${sig}`);
     clearInterval(reportTimer);
     clearInterval(selfHealTimer);
+    clearInterval(connMonitorTimer);
+    clearInterval(connLogRotateTimer);
     clearInterval(heartbeatTimer);
     ws?.close?.();
     setTimeout(() => process.exit(0), 500);

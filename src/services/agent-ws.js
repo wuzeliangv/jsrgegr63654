@@ -360,7 +360,7 @@ function handleReport(ws, msg) {
   const agent = agents.get(nodeId);
   if (!agent) return;
 
-  const { xrayAlive, serviceAlive, hysteriaAlive, cnReachable, ipv6Reachable, loadAvg, memUsage, diskUsage, trafficRecords, version, capabilities, reconnectMetrics, cpuUsage, netBandwidth, uptime, publicIp } = msg;
+  const { xrayAlive, serviceAlive, hysteriaAlive, cnReachable, ipv6Reachable, loadAvg, memUsage, diskUsage, trafficRecords, version, capabilities, reconnectMetrics, cpuUsage, netBandwidth, uptime, publicIp, abuseAlerts } = msg;
   // serviceAlive 为 xrayAlive 的中性别名(供非 Xray 的自研 core 使用);两者任一为真即视为存活
   const xrayAliveEff = (xrayAlive !== undefined) ? xrayAlive : serviceAlive;
   const now = nowUtcIso();
@@ -400,6 +400,46 @@ function handleReport(ws, msg) {
       });
     } catch (err) {
       logger.debug({ err, nodeId }, '记录监控指标失败');
+    }
+  }
+
+  // 处理滥用告警
+  if (abuseAlerts && Array.isArray(abuseAlerts) && abuseAlerts.length > 0) {
+    try {
+      const node = db.getNodeById(nodeId);
+      const nodeName = node ? node.name : `Node#${nodeId}`;
+      for (const alert of abuseAlerts.slice(0, 10)) {
+        // 写入数据库
+        try {
+          const d = db.getDb();
+          d.prepare(`
+            INSERT INTO abuse_log (node_id, user_id, alert_type, detail)
+            VALUES (?, ?, ?, ?)
+          `).run(
+            nodeId,
+            alert.userId || null,
+            alert.type || 'unknown',
+            JSON.stringify(alert)
+          );
+        } catch (dbErr) {
+          logger.debug({ err: dbErr.message, nodeId, alert: alert.type }, '写入 abuse_log 失败');
+        }
+        // 发送通知（节流：同类告警 5 分钟内不重复通知）
+        const throttleKey = `abuse_${nodeId}_${alert.type}_${alert.userId || 'all'}`;
+        const now = Date.now();
+        if (!handleReport._alertThrottle) handleReport._alertThrottle = {};
+        if (!handleReport._alertThrottle[throttleKey] || now - handleReport._alertThrottle[throttleKey] > 300_000) {
+          handleReport._alertThrottle[throttleKey] = now;
+          try {
+            const { notify } = require('./notify');
+            notify.abuseAlert(nodeName, alert.type, alert);
+          } catch (_) {}
+        }
+      }
+      // 审计日志
+      db.addAuditLog(null, 'abuse_alert', `节点 ${nodeName || nodeId} 上报 ${abuseAlerts.length} 条滥用告警`, 'agent');
+    } catch (err) {
+      logger.debug({ err: err.message, nodeId }, '处理滥用告警失败');
     }
   }
 }

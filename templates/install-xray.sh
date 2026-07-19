@@ -1,4 +1,8 @@
 #!/usr/bin/env bash
+# ==============================================================================
+# Xray 节点自动安装依赖与内核脚本 (由主面板/Agent 自动化调用)
+# ==============================================================================
+
 set -euo pipefail
 
 export DEBIAN_FRONTEND=noninteractive
@@ -24,7 +28,7 @@ if ! command -v apt-get >/dev/null 2>&1; then
   exit 1
 fi
 
-# 某些云主机会遇到 apt 临时锁或镜像瞬断，这里做轻量重试并保留错误输出。
+# 轻量重试解决镜像暂锁或网络瞬断
 retry 3 apt-get update -y
 retry 3 apt-get install -y curl unzip jq ca-certificates
 

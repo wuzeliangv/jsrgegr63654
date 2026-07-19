@@ -344,6 +344,15 @@ cron.schedule('* * * * *', () => {
   } catch (err) { logger.error({ err }, '关闭超时订单失败'); }
 });
 
+// 每分钟：检查农场作物成熟情况并发送 TG 通知
+cron.schedule('* * * * *', async () => {
+  try {
+    await require('./services/farm').checkAndNotifyMatureCrops();
+  } catch (err) {
+    logger.error({ err }, '发送农场成熟通知失败');
+  }
+});
+
 // 每天凌晨 2 点：清空已关闭（closed）、失败（failed）以及超额被拒（rejected_daily_limit）的无效兑换订单
 cron.schedule('0 2 * * *', () => {
   try {

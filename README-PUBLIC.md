@@ -1,31 +1,31 @@
-# 大姨子的诱惑
+# 大姨子的诱惑 (Dayizi Panel)
 
-面向个人或小团队的多协议代理管理面板，把用户、节点、订阅、流量、运维放进同一套系统。
+面向个人与小团队的高能多协议代理管理面板，将用户管理、节点编排、智能订阅、流量统计以及 AI 自动化运维无缝集成至同一系统。
 
-## 核心能力
+## 🌟 核心特性
 
-- VLESS Reality / Shadowsocks / Hysteria 2 多协议
-- 邮箱注册登录，用户分组与流量配额
-- 智能订阅分发，自动识别客户端
-- 一键部署节点，AWS 集成换 IP
-- Telegram Bot 签到 / 大转盘 / 翻卡 / 猜拳
-- 探针实时性能监控
-- 自动化运维（被墙检测、自动换 IP、密钥轮换、不活跃冻结）
-- OpenClaw AI 自动巡检（可选）
+- **多协议支持**：支持 VLESS Reality (TCP/WS)、Shadowsocks 以及 Hysteria 2。
+- **用户与配额**：邮箱注册登录，支持用户分组、流量配额限制、过期与不活跃自动冻结。
+- **智能订阅分发**：自动识别客户端 UA（Clash / Sing-box / V2Ray / Shadowrocket 等），下发适配配置。
+- **节点自动部署**：一键部署远程 VPS，支持挂载 SOCKS5 落地出口与 AWS 集成自动换 IP。
+- **Telegram Bot 互动**：支持每日签到领流量、幸运大转盘、翻卡、猜拳游戏及节点状态通知。
+- **探针与运维**：实时监控服务器 CPU/内存/带宽/延迟，提供 OPS API 与数据库一键备份恢复。
 
-## 安装
+## 🚀 一键安装
+
+适用于 Debian 11+ / Ubuntu 20.04+ 系统：
 
 ```bash
 bash <(curl -sL https://raw.githubusercontent.com/vzzoxo/xiaoyizi/main/install.sh)
 ```
 
-## 文档
+## 📚 延伸文档
 
-- [完整说明](./README.md)
-- [管理后台](./ADMIN-GUIDE.md)
-- [API 参考](./README-API.md)
-- [部署检查清单](./DEPLOY-CHECKLIST.md)
+- 📖 [完整项目说明](./README.md)
+- 📘 [管理后台指南](./ADMIN-GUIDE.md)
+- 🔌 [API 接口参考](./README-API.md)
+- 📋 [上线检查清单](./DEPLOY-CHECKLIST.md)
 
-## License
+## 📜 开源协议
 
-[MIT](./LICENSE)
+[MIT License](./LICENSE)

@@ -1119,6 +1119,7 @@ function yamlEscape(s) {
 
 function buildHy2Config(port, users, opts = {}) {
   const statsSecret = opts.statsSecret || crypto.randomBytes(16).toString('hex');
+  const outboundName = opts.socks5Host ? 'socks5out' : null;
   const lines = [
     `listen: :${port}`,
     '',
@@ -1143,6 +1144,36 @@ function buildHy2Config(port, users, opts = {}) {
     lines.push(`    password: "${yamlEscape(opts.obfs)}"`);
     lines.push('');
   }
+  // 协议嗅探（用于 ACL 域名匹配）
+  lines.push('sniff:');
+  lines.push('  enable: true');
+  lines.push('  timeout: 2s');
+  lines.push('');
+  // ACL 防滥用规则：阻止扫描、内网探测、高风险端口
+  lines.push('acl:');
+  lines.push('  inline:');
+  // 阻止访问内网/回环/链路本地地址（防 SSRF / 内网探测）
+  lines.push('    - reject(10.0.0.0/8)');
+  lines.push('    - reject(172.16.0.0/12)');
+  lines.push('    - reject(192.168.0.0/16)');
+  lines.push('    - reject(169.254.0.0/16)');
+  lines.push('    - reject(127.0.0.0/8)');
+  lines.push('    - reject(100.64.0.0/10)');
+  // 仅阻止无合法代理用途的危险端口（垃圾邮件、SMB 蠕虫、Telnet）
+  // SSH(22)/数据库(3306,5432,6379)/RDP(3389) 等开发者常用端口不封，
+  // 通过 Agent 连接速率监控识别扫描行为（正常用户连几台，扫描器连几百台）
+  lines.push('    - reject(all, tcp/23)');   // Telnet — 几乎无合法用途
+  lines.push('    - reject(all, tcp/25)');   // SMTP — 发垃圾邮件
+  lines.push('    - reject(all, udp/25)');
+  lines.push('    - reject(all, tcp/135)');  // Windows RPC — SMB 蠕虫
+  lines.push('    - reject(all, tcp/139)');  // NetBIOS — SMB 蠕虫
+  lines.push('    - reject(all, tcp/445)');  // SMB — 永恒之蓝等漏洞利用
+  lines.push('    - reject(all, udp/137)');  // NetBIOS Name Service
+  lines.push('    - reject(all, udp/138)');  // NetBIOS Datagram
+  // 默认放行出口规则：配置 SOCKS5 时路由至 SOCKS5 落地，否则 direct
+  const defaultAction = outboundName ? `${outboundName}(all)` : 'direct(all)';
+  lines.push(`    - ${defaultAction}`);
+  lines.push('');
   // 不设 bandwidth，由客户端自行探测，服务端不限速
   lines.push('masquerade:');
   lines.push('  type: proxy');
@@ -1153,7 +1184,7 @@ function buildHy2Config(port, users, opts = {}) {
   // SOCKS5 落地出口
   if (opts.socks5Host) {
     lines.push('outbounds:');
-    lines.push('  - name: socks5-out');
+    lines.push(`  - name: ${outboundName}`);
     lines.push('    type: socks5');
     lines.push('    socks5:');
     lines.push(`      addr: "${yamlEscape(opts.socks5Host)}:${opts.socks5Port || 1080}"`);

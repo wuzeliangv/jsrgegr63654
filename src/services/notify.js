@@ -118,6 +118,22 @@ const notify = {
     if (db.getSetting('tg_on_ops') !== 'true') return Promise.resolve();
     return send(msg).catch(() => {});
   },
+  abuseAlert(nodeName, alertType, detail) {
+    // 复用 ops 通知开关
+    if (db.getSetting('tg_on_ops') !== 'true') return Promise.resolve();
+    const typeLabel = {
+      'high_conn_count': '⚡ 连接数异常',
+      'traffic_spike': '📈 流量速率异常',
+    }[alertType] || `⚠️ ${alertType}`;
+    let msg = `🚨 <b>节点滥用告警</b>\n类型: ${typeLabel}\n节点: ${escTg(nodeName)}\n`;
+    if (typeof detail === 'object') {
+      if (detail.userId) msg += `用户ID: ${detail.userId}\n`;
+      if (detail.totalConns) msg += `活跃连接: ${detail.totalConns}\n`;
+      if (detail.rateMbps) msg += `速率: ${detail.rateMbps} Mbps\n`;
+    }
+    msg += `时间: ${nowShanghaiText()}`;
+    return send(msg).catch(() => {});
+  },
   // 给指定用户发流量预警（不走 ops 通道，发到用户私聊）
   async userTrafficAlert(user, usedGb) {
     if (!user || !user.telegram_id) return false;
