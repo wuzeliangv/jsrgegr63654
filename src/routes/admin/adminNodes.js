@@ -202,17 +202,19 @@ function updateNodeBasicInfo(req, res) {
     }
     db.addAuditLog(req.user.id, 'node_update_basic', `节点更新: ${oldName}(${oldHost}) → ${trimmedName}(${trimmedHost})`, req.clientIp || req.ip);
 
-    // 同步同机 peer 节点的 ssh_host（如双协议 VLESS+SS 部署在同一台机器）
-    const allNodes = db.getAllNodes();
-    const peerNodes = allNodes.filter(n => n.id !== node.id && (n.ssh_host === oldSshHost || n.ssh_host === oldHost));
-    for (const peer of peerNodes) {
-      const updates = { ssh_host: trimmedHost };
-      // 非 IPv6 节点的 host 也一并更新
-      if (peer.ip_version !== 6 && peer.host === oldHost) {
-        updates.host = trimmedHost;
+    // 同步同机 peer 节点的 ssh_host（如双协议 VLESS+SS 部署在同一台机器，手动添加节点不参与）
+    if (!node.is_manual) {
+      const allNodes = db.getAllNodes();
+      const peerNodes = allNodes.filter(n => n.id !== node.id && !n.is_manual && (n.ssh_host === oldSshHost || n.ssh_host === oldHost));
+      for (const peer of peerNodes) {
+        const updates = { ssh_host: trimmedHost };
+        // 非 IPv6 节点的 host 也一并更新
+        if (peer.ip_version !== 6 && peer.host === oldHost) {
+          updates.host = trimmedHost;
+        }
+        db.updateNode(peer.id, updates);
+        db.addAuditLog(req.user.id, 'node_update_basic', `同机节点同步: ${peer.name} ssh_host → ${trimmedHost}`, req.clientIp || req.ip);
       }
-      db.updateNode(peer.id, updates);
-      db.addAuditLog(req.user.id, 'node_update_basic', `同机节点同步: ${peer.name} ssh_host → ${trimmedHost}`, req.clientIp || req.ip);
     }
   }
   res.redirect('/admin#nodes');
