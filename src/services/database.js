@@ -410,6 +410,49 @@ function initTables() {
     CREATE INDEX IF NOT EXISTS idx_abuse_log_user_time ON abuse_log(user_id, created_at);
     CREATE INDEX IF NOT EXISTS idx_abuse_log_node_time ON abuse_log(node_id, created_at);
     CREATE INDEX IF NOT EXISTS idx_abuse_log_type_time ON abuse_log(alert_type, created_at);
+
+    -- 节点监控指标表
+    CREATE TABLE IF NOT EXISTS node_metrics (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      node_id INTEGER NOT NULL,
+      cpu_usage REAL,
+      mem_usage REAL,
+      disk_usage REAL,
+      load_avg_1 REAL,
+      load_avg_5 REAL,
+      load_avg_15 REAL,
+      net_rx_rate REAL,
+      net_tx_rate REAL,
+      uptime INTEGER,
+      recorded_at TEXT DEFAULT (datetime('now')),
+      FOREIGN KEY (node_id) REFERENCES nodes(id) ON DELETE CASCADE
+    );
+    CREATE INDEX IF NOT EXISTS idx_node_metrics_node_time ON node_metrics(node_id, recorded_at);
+
+    -- AWS 账号管理表
+    CREATE TABLE IF NOT EXISTS aws_accounts (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      name TEXT NOT NULL,
+      access_key TEXT NOT NULL,
+      secret_key TEXT NOT NULL,
+      default_region TEXT DEFAULT 'us-east-1',
+      socks5_host TEXT,
+      socks5_port INTEGER DEFAULT 1080,
+      socks5_user TEXT,
+      socks5_pass TEXT,
+      enabled INTEGER DEFAULT 1,
+      created_at TEXT DEFAULT (datetime('now')),
+      updated_at TEXT DEFAULT (datetime('now'))
+    );
+
+    -- 运维日志表
+    CREATE TABLE IF NOT EXISTS ops_diary (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      content TEXT NOT NULL,
+      mood TEXT DEFAULT 'neutral',
+      category TEXT DEFAULT 'general',
+      created_at TEXT DEFAULT (datetime('now'))
+    );
   `);
 
   // 迁移（拆分到 migrations.js）
