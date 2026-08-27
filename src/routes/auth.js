@@ -261,7 +261,7 @@ router.get('/callback', nodelocLoginLimiter, handleNodeLocCallback);
 const sendCodeLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
   max: 10,
-  message: JSON.stringify({ ok: false, error: '发送过于频繁，请稍后重试' }),
+  message: JSON.stringify({ ok: false, error: '当前 IP 请求过于频繁（15分钟限10次），请稍后再试' }),
   standardHeaders: true,
   legacyHeaders: false,
 });
@@ -313,20 +313,20 @@ router.post('/send-email-code', sendCodeLimiter, async (req, res) => {
   if (allowedDomains.length > 0) {
     const domain = email.split('@')[1] || '';
     if (!allowedDomains.includes(domain)) {
-      return res.json({ ok: false, error: '该邮箱后缀不允许注册' });
+      return res.json({ ok: false, error: `该邮箱后缀不允许注册（仅支持: ${allowedDomains.map(d => '@' + d).join('、')}）` });
     }
   }
 
   const existing = emailCodes.get(email);
   if (existing && Date.now() - (existing.expiresAt - CODE_TTL) < CODE_COOLDOWN) {
-    return res.json({ ok: false, error: '发送过于频繁，请稍后重试' });
+    return res.json({ ok: false, error: '操作过于频繁，请等待 60 秒倒计时结束后再试' });
   }
 
   if (!checkGlobalSendLimit()) {
-    return res.json({ ok: false, error: '系统发送邮件过于频繁，请稍后重试' });
+    return res.json({ ok: false, error: '系统发信已达本小时全局上限（200封/小时），请稍后重试' });
   }
   if (!checkRecipientLimit(email)) {
-    return res.json({ ok: false, error: '该邮箱发送过于频繁，请稍后重试' });
+    return res.json({ ok: false, error: '该邮箱本小时发送次数已达上限（10封/小时），请稍后再试' });
   }
 
   const code = String(crypto.randomInt(100000, 1000000));
@@ -550,14 +550,14 @@ router.post('/forgot-send-code', emailLoginLimiter, csrfProtection, async (req, 
 
   const existing = forgotCodes.get(email);
   if (existing && Date.now() - (existing.expiresAt - CODE_TTL) < CODE_COOLDOWN) {
-    return res.json({ ok: false, error: '发送过于频繁，请稍后重试' });
+    return res.json({ ok: false, error: '操作过于频繁，请等待 60 秒倒计时结束后再试' });
   }
 
   if (!checkGlobalSendLimit()) {
-    return res.json({ ok: false, error: '系统发送邮件过于频繁，请稍后重试' });
+    return res.json({ ok: false, error: '系统发信已达本小时全局上限（200封/小时），请稍后重试' });
   }
   if (!checkRecipientLimit(email)) {
-    return res.json({ ok: false, error: '该邮箱发送过于频繁，请稍后重试' });
+    return res.json({ ok: false, error: '该邮箱本小时发送次数已达上限（10封/小时），请稍后再试' });
   }
 
   const code = String(crypto.randomInt(100000, 1000000));
