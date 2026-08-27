@@ -80,7 +80,7 @@ async function verifyConnection() {
   return { ok: true, from: resolveFrom(cfg) };
 }
 
-async function sendMail({ to, subject, text, html }) {
+async function sendMail({ to, subject, text, html, headers = {} }) {
   const cfg = getConfig();
   const transporter = getTransporter();
   if (!transporter) {
@@ -92,12 +92,20 @@ async function sendMail({ to, subject, text, html }) {
     throw new Error('SMTP 发件人未配置');
   }
 
+  const defaultHeaders = {
+    'X-Priority': '3',
+    'X-Auto-Response-Suppress': 'All',
+    'Auto-Submitted': 'auto-generated',
+    ...headers,
+  };
+
   return transporter.sendMail({
     from,
     to,
     subject: String(subject || ''),
     text: String(text || ''),
     html: html ? String(html) : undefined,
+    headers: defaultHeaders,
   });
 }
 

@@ -282,6 +282,54 @@ router.get('/email-register', (req, res) => {
   });
 });
 
+function buildVerificationEmailHtml({ siteName, domain, title, intro, code, note }) {
+  const safeSite = siteName || '大姨子的诱惑';
+  const safeDomain = domain || 'cd.sd';
+  return `<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>${title}</title>
+</head>
+<body style="margin:0;padding:0;background-color:#08060d;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,'Helvetica Neue',Arial,sans-serif;-webkit-font-smoothing:antialiased;color:#e5e7eb;">
+  <div style="display:none;font-size:1px;color:#08060d;line-height:1px;max-height:0px;max-width:0px;opacity:0;overflow:hidden;">
+    【${safeSite}】您的${title}是 ${code}，10 分钟内有效。
+  </div>
+  <table role="presentation" border="0" cellpadding="0" cellspacing="0" width="100%" style="background-color:#08060d;padding:40px 15px;">
+    <tr>
+      <td align="center">
+        <table role="presentation" border="0" cellpadding="0" cellspacing="0" width="100%" style="max-width:480px;background-color:#16131f;border-radius:16px;box-shadow:0 8px 32px rgba(0,0,0,0.5);overflow:hidden;border:1px solid rgba(255,255,255,0.08);">
+          <tr>
+            <td style="background:linear-gradient(135deg,#f43f5e,#e11d48,#be123c);padding:28px 32px;text-align:center;">
+              <h1 style="margin:0;color:#ffffff;font-size:22px;font-weight:700;letter-spacing:1px;text-shadow:0 2px 8px rgba(0,0,0,0.3);">🍑 ${safeSite}</h1>
+            </td>
+          </tr>
+          <tr>
+            <td style="padding:32px 32px 28px;">
+              <h2 style="margin:0 0 14px;font-size:16px;font-weight:600;color:#ffffff;">尊敬的用户：</h2>
+              <p style="margin:0 0 20px;font-size:14px;line-height:1.6;color:#9ca3af;">${intro}</p>
+              <div style="background-color:rgba(244,63,94,0.08);border:1px solid rgba(244,63,94,0.25);border-radius:12px;padding:20px;text-align:center;margin:0 0 24px;">
+                <span style="font-family:'Courier New',Courier,monospace;font-size:34px;font-weight:700;letter-spacing:8px;color:#fb7185;display:inline-block;">${code}</span>
+              </div>
+              <p style="margin:0 0 8px;font-size:12px;line-height:1.6;color:#9ca3af;">• 验证码有效期为 <strong style="color:#ffffff;">10 分钟</strong>，请尽快完成验证。</p>
+              <p style="margin:0 0 8px;font-size:12px;line-height:1.6;color:#9ca3af;">• ${note || '如非您本人操作，请忽略此邮件，您的账号信息安全不会受到影响。'}</p>
+            </td>
+          </tr>
+          <tr>
+            <td style="background-color:rgba(255,255,255,0.02);padding:20px 32px;border-top:1px solid rgba(255,255,255,0.05);text-align:center;">
+              <p style="margin:0;font-size:12px;color:#6b7280;">官方地址：<a href="https://${safeDomain}" style="color:#f43f5e;text-decoration:none;">https://${safeDomain}</a></p>
+              <p style="margin:6px 0 0;font-size:11px;color:#4b5563;">此邮件由系统自动发出，请勿直接回复 · © ${safeSite}</p>
+            </td>
+          </tr>
+        </table>
+      </td>
+    </tr>
+  </table>
+</body>
+</html>`;
+}
+
 // 发送邮箱验证码
 router.post('/send-email-code', sendCodeLimiter, async (req, res) => {
   const email = String(req.body?.email || '').trim().toLowerCase();
@@ -332,23 +380,21 @@ router.post('/send-email-code', sendCodeLimiter, async (req, res) => {
   const code = String(crypto.randomInt(100000, 1000000));
   emailCodes.set(email, { code, expiresAt: Date.now() + CODE_TTL, attempts: 0 });
 
+  const domain = process.env.PANEL_DOMAIN || 'cd.sd';
+  const siteName = db.getSetting('smtp_from_name') || '大姨子的诱惑';
+
   try {
     await sendMail({
       to: email,
-      subject: '验证码',
-      html: `
-<div style="max-width:420px;margin:0 auto;font-family:'Helvetica Neue',Arial,sans-serif;color:#333">
-  <div style="background:#fff;border-radius:8px;border:1px solid #e5e7eb;padding:32px 24px">
-    <h2 style="margin:0 0 16px;font-size:18px;color:#111">邮箱验证</h2>
-    <p style="font-size:14px;margin:0 0 20px;color:#555">您正在注册账号，请使用以下验证码完成验证：</p>
-    <div style="background:#f9fafb;border:1px solid #e5e7eb;border-radius:8px;padding:16px;text-align:center;margin:0 0 20px">
-      <span style="font-size:32px;font-weight:700;color:#111;font-family:'Courier New',monospace;letter-spacing:6px">${code}</span>
-    </div>
-    <p style="font-size:12px;color:#888;margin:0 0 4px">验证码 10 分钟内有效，请勿泄露给他人。</p>
-    <p style="font-size:12px;color:#888;margin:0">如果这不是您的操作，请忽略此邮件。</p>
-  </div>
-</div>`,
-      text: `您的注册验证码是：${code}，10 分钟内有效。`,
+      subject: `[${domain}] 注册验证码：${code}`,
+      html: buildVerificationEmailHtml({
+        siteName,
+        domain,
+        title: '注册验证码',
+        intro: '您正在注册账号，请在页面输入框中填写下方 6 位数字验证码完成身份验证：',
+        code,
+      }),
+      text: `【${siteName}】您正在注册账号，您的邮箱验证码为：${code}（10 分钟内有效）。如非本人操作请忽略此邮件。官方地址：https://${domain}`,
     });
     res.json({ ok: true });
   } catch (err) {
@@ -563,23 +609,22 @@ router.post('/forgot-send-code', emailLoginLimiter, csrfProtection, async (req, 
   const code = String(crypto.randomInt(100000, 1000000));
   forgotCodes.set(email, { code, expiresAt: Date.now() + CODE_TTL, attempts: 0 });
 
+  const domain = process.env.PANEL_DOMAIN || 'cd.sd';
+  const siteName = db.getSetting('smtp_from_name') || '大姨子的诱惑';
+
   try {
     await sendMail({
       to: email,
-      subject: '密码重置',
-      html: `
-<div style="max-width:420px;margin:0 auto;font-family:'Helvetica Neue',Arial,sans-serif;color:#333">
-  <div style="background:#fff;border-radius:8px;border:1px solid #e5e7eb;padding:32px 24px">
-    <h2 style="margin:0 0 16px;font-size:18px;color:#111">密码重置</h2>
-    <p style="font-size:14px;margin:0 0 20px;color:#555">您正在重置密码，请使用以下验证码：</p>
-    <div style="background:#f9fafb;border:1px solid #e5e7eb;border-radius:8px;padding:16px;text-align:center;margin:0 0 20px">
-      <span style="font-size:32px;font-weight:700;color:#111;font-family:'Courier New',monospace;letter-spacing:6px">${code}</span>
-    </div>
-    <p style="font-size:12px;color:#888;margin:0 0 4px">验证码 10 分钟内有效。</p>
-    <p style="font-size:12px;color:#888;margin:0">如果这不是您的操作，请忽略此邮件。</p>
-  </div>
-</div>`,
-      text: `您的密码重置验证码是：${code}，10 分钟内有效。`,
+      subject: `[${domain}] 密码重置验证码：${code}`,
+      html: buildVerificationEmailHtml({
+        siteName,
+        domain,
+        title: '密码重置验证码',
+        intro: '您正在重置账号密码，请在页面输入框中填写下方 6 位数字验证码：',
+        code,
+        note: '如非您本人申请重置密码，请务必注意账号安全，并忽略此邮件。',
+      }),
+      text: `【${siteName}】您正在重置密码，您的验证码为：${code}（10 分钟内有效）。如非本人操作请忽略此邮件。官方地址：https://${domain}`,
     });
     res.json({ ok: true });
   } catch (err) {
