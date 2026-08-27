@@ -28,7 +28,7 @@ const CODE_TTL = 10 * 60 * 1000; // 10 分钟
 const CODE_COOLDOWN = 60 * 1000;  // 60 秒发送间隔
 
 // 全局每小时发送量限制，防止被滥用导致 SMTP 封号
-const GLOBAL_HOURLY_LIMIT = 50;
+const GLOBAL_HOURLY_LIMIT = 200;
 let globalSendCount = 0;
 let globalSendWindowStart = Date.now();
 
@@ -43,9 +43,9 @@ function checkGlobalSendLimit() {
   return true;
 }
 
-// 同一收件人每小时最多 3 封
+// 同一收件人每小时最多 10 封
 const recipientSendTimes = new Map(); // email -> [timestamps]
-const RECIPIENT_HOURLY_LIMIT = 3;
+const RECIPIENT_HOURLY_LIMIT = 10;
 
 function checkRecipientLimit(email) {
   const now = Date.now();
@@ -287,7 +287,7 @@ router.post('/send-email-code', sendCodeLimiter, async (req, res) => {
   const email = String(req.body?.email || '').trim().toLowerCase();
   const inviteCode = normalizeInviteCode(req.body?.inviteCode || '');
   if (!isValidEmail(email)) return res.json({ ok: false, error: '邮箱格式不正确' });
-  if (isGmailDotAbuse(email)) return res.json({ ok: false, error: '请使用标准 Gmail 地址注册' });
+  if (isGmailDotAbuse(email)) return res.json({ ok: false, error: 'Gmail 地址不支持包含点号(.)或加号(+)等别名字符，请使用无符号纯净前缀注册' });
   if (isEmailRegistered(email)) return res.json({ ok: false, error: '该邮箱已注册' });
 
   // 首位用户免验证码：系统无用户时跳过邮件发送，直接标记通过

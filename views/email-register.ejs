@@ -84,10 +84,9 @@
         <button type="button" id="btn-send-code" class="btn-code shrink-0 px-4 py-2 rounded-xl text-xs font-medium">发送验证码</button>
       </div>
       <% if (allowedDomains) { %>
-        <p class="text-gray-600 text-[11px] mb-4 ml-1">仅支持 <span class="text-rose-400"><%= allowedDomains.split(',').map(d => '@' + d).join('、') %></span> 邮箱注册</p>
-      <% } else { %>
-        <div class="mb-3"></div>
+        <p class="text-gray-600 text-[11px] mb-2 ml-1">仅支持 <span class="text-rose-400"><%= allowedDomains.split(',').map(d => '@' + d).join('、') %></span> 邮箱注册</p>
       <% } %>
+      <p class="text-gray-500 text-[11px] mb-3 ml-1 leading-relaxed">提示：Gmail 注册请使用不带点号(.)或加号(+)的纯净地址；若未收到验证码，请务必检查【垃圾邮件箱】。</p>
       <label class="text-gray-500 text-xs block mb-1.5 ml-1">验证码</label>
       <div class="input-wrap mb-4">
         <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12.75L11.25 15 15 9.75m-3-7.036A11.959 11.959 0 013.598 6 11.99 11.99 0 003 9.749c0 5.592 3.824 10.29 9 11.623 5.176-1.332 9-6.03 9-11.622 0-1.31-.21-2.571-.598-3.751h-.152c-3.196 0-6.1-1.248-8.25-3.285z"/></svg>
@@ -137,6 +136,7 @@
           }
           let sec = 60;
           btn.textContent = sec + 's';
+          showToast('验证码已发送！若未在收件箱收到，请务必检查【垃圾邮件箱】。');
           const t = setInterval(() => {
             if (--sec <= 0) { clearInterval(t); btn.disabled = false; btn.textContent = '重新发送'; }
             else btn.textContent = sec + 's';
